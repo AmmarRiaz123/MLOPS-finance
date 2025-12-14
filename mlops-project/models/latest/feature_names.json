@@ -1,0 +1,18 @@
+[
+  "daily_return",
+  "ma_5",
+  "ma_10",
+  "ma_20",
+  "close_to_ma5",
+  "close_to_ma10",
+  "ma5_to_ma10",
+  "high_low_spread",
+  "open_close_spread",
+  "volatility_5d",
+  "volatility_10d",
+  "return_lag1",
+  "return_lag2",
+  "return_lag3",
+  "volume_ma_5",
+  "volume_ratio"
+]
