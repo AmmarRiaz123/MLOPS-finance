@@ -35,13 +35,14 @@ def _archive_if_exists(path: Path, archived_dir: Path, prefix: str):
 
 def evaluate(horizon: int = 3):
     print("[eval] preparing data...")
-    # prepare features matching training horizon
     res = prepare_features(scale=True, horizons=[horizon])
     if len(res) == 4:
         X, y, dates, scaler = res
     else:
         X, y, dates = res
         scaler = None
+    if X.empty:
+        raise RuntimeError("No data for evaluation")
 
     split_idx = int(len(X) * 0.8)
     X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
@@ -53,7 +54,7 @@ def evaluate(horizon: int = 3):
     model = joblib.load(LATEST_MODEL_PATH)
     print(f"[eval] loaded model from {LATEST_MODEL_PATH.resolve()}")
 
-    # align features to model if booster has feature_name
+    # align validation features with model feature names if possible
     try:
         if callable(getattr(model, "feature_name", None)):
             feat_names = model.feature_name()
@@ -67,7 +68,6 @@ def evaluate(horizon: int = 3):
         y_pred = model.predict(X_val_used)
     except Exception:
         y_pred = model.predict(X_val_used.values)
-
     rmse = float(np.sqrt(mean_squared_error(y_val, y_pred)))
     mae = float(mean_absolute_error(y_val, y_pred))
     r2 = float(r2_score(y_val, y_pred))
@@ -170,6 +170,18 @@ def evaluate(horizon: int = 3):
             print("[eval] no feature importance available for model type")
     except Exception as e:
         print(f"[eval] feature importance plot failed: {e}")
+
+    final_metrics = {
+        "evaluated_at": datetime.now().isoformat(),
+        "horizon": horizon,
+        "metrics": metrics,
+        "train_end": str(train_df['ds'].max().date()),
+        "regressor_coefs": reg_coefs,
+        "feature_importance": feat_imp if 'feat_imp' in locals() else None
+    }
+    with open(METRICS_LATEST, "w") as f:
+        json.dump(final_metrics, f, indent=2)
+    print(f"[eval] saved metrics: {METRICS_LATEST.resolve()}")
 
     return metrics
 

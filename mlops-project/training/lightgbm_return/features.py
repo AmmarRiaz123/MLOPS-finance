@@ -71,12 +71,6 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
     # daily return (past)
     df['daily_return'] = df['Close'].pct_change()
 
-    # multi-day targets
-    if horizons is None:
-        horizons = [1]
-    for h in horizons:
-        df[f'return_{h}d'] = (df['Close'].shift(-h) - df['Close']) / df['Close']
-
     # rolling returns (periodic pct change)
     df['ret_3'] = df['Close'].pct_change(periods=3)
     df['ret_5'] = df['Close'].pct_change(periods=5)
@@ -90,16 +84,34 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
         df[f'ret_skew_{w}'] = df['daily_return'].rolling(w, min_periods=1).skew().fillna(0)
         df[f'ret_kurt_{w}'] = df['daily_return'].rolling(w, min_periods=1).kurt().fillna(0)
 
+    # provide a short-name std5 for backwards compatibility (used elsewhere)
+    if 'std5' not in df.columns:
+        df['std5'] = df['daily_return'].rolling(5, min_periods=1).std().fillna(0)
+    # also ensure ret_std_5 exists (redundant-safe)
+    if 'ret_std_5' not in df.columns:
+        df['ret_std_5'] = df['std5']
+
     # compact engineered features (prefer non-redundant set)
     df['return_lag1'] = df['daily_return'].shift(1)
     df['return_lag2'] = df['daily_return'].shift(2)
 
     df['ma5'] = df['Close'].rolling(5).mean()
     df['ma10'] = df['Close'].rolling(10).mean()
-    df['std5'] = df['daily_return'].rolling(5).std()
+    # df['std5'] = df['daily_return'].rolling(5).std()  # std5 already ensured above
 
+    # EWMA momentum
     df['ewma_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+    # ensure momentum_8 always exists (safe division, fillna)
     df['momentum_8'] = (df['Close'] - df['ewma_8']) / df['ewma_8'].replace(0, np.nan)
+    df['momentum_8'] = df['momentum_8'].fillna(0)
+
+    # interactions
+    # create interactions using safe lookups to avoid KeyError
+    vol_vals = df['Volume'].fillna(0) if 'Volume' in df.columns else pd.Series(0, index=df.index)
+    std5_vals = df['std5'].fillna(0) if 'std5' in df.columns else pd.Series(0, index=df.index)
+    mom8_vals = df['momentum_8'].fillna(0) if 'momentum_8' in df.columns else pd.Series(0, index=df.index)
+    df['vol_x_std5'] = vol_vals * std5_vals
+    df['vol_x_mom8'] = vol_vals * mom8_vals
 
     # RSI scaled 0-1
     delta = df['Close'].diff()
@@ -128,7 +140,9 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
     ]
 
     # keep only features that exist and are numeric
-    feature_cols = [c for c in candidate_features if c in df.columns]
+    # intersect candidate list with actual df columns (avoid KeyError later)
+    feature_cols = [c for c in candidate_features if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+
     if not feature_cols:
         raise RuntimeError("No engineered features available")
 
@@ -141,12 +155,27 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
         kept = feature_cols
     feature_cols = kept
 
+    # multi-day targets
+    if horizons is None:
+        horizons = [1]
+    # ensure target columns exist for all requested horizons (safe in-place creation)
+    for h in horizons:
+        col = f'return_{h}d'
+        if col not in df.columns:
+            future_close = df['Close'].shift(-h)
+            df[col] = (future_close - df['Close']) / df['Close']
+
     # build X/y/dates aligned, drop rows where target is NaN
     X_full = df[feature_cols].copy()
     target_name = f'return_{horizons[0]}d'
+    # safe drop: ensure column exists (should after creation above) then drop NaNs
+    if target_name not in df.columns:
+        # last-resort compute
+        df[target_name] = (df['Close'].shift(-horizons[0]) - df['Close']) / df['Close']
     df = df.dropna(subset=[target_name])
     y = df[target_name].copy()
     dates = df.index.to_series()
+    # align X to y index
     X = X_full.loc[y.index]
 
     # scaling optional

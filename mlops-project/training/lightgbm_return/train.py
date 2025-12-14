@@ -225,62 +225,75 @@ def train(random_seed: int = 42,
     # feature importance from booster
     try:
         feat_names = X.columns.tolist()
-        # obtain both split (how often used) and gain (total gain)
-        fi_split = np.array(model.feature_importance(importance_type="split"))
         fi_gain = np.array(model.feature_importance(importance_type="gain"))
+        fi_split = np.array(model.feature_importance(importance_type="split"))
 
-        # build a stable combined score: prefer gain, fallback to split if gain is all zeros
-        combined = fi_gain.astype(float)
-        if combined.sum() <= 0:
-            combined = fi_split.astype(float)
-
-        # normalize to percentages (sum to 100) for readability
-        if combined.sum() > 0:
-            norm = combined / combined.sum()
+        # Prefer gain when informative, otherwise use split.
+        if fi_gain.sum() > 0:
+            scores = fi_gain.astype(float)
+            source = "gain"
+        elif fi_split.sum() > 0:
+            scores = fi_split.astype(float)
+            source = "split"
         else:
-            norm = np.ones_like(combined) / len(combined)
-        feat_imp = dict(zip(feat_names, (norm * 100.0).round(6).tolist()))
+            # no informative importance from model; keep zeros (do NOT assign equal weights)
+            scores = np.zeros(len(feat_names), dtype=float)
+            source = "none"
 
-        # Drop zero-importance features (exact zeros) and retrain once on reduced set
+        # Normalize to percentages when there is some signal; otherwise keep zeros
+        if scores.sum() > 0:
+            norm = (scores / scores.sum()) * 100.0
+            norm = norm.round(6)
+            feat_imp = dict(zip(feat_names, norm.tolist()))
+        else:
+            feat_imp = dict(zip(feat_names, [0.0] * len(feat_names)))
+
+        print(f"[train] feature importance computed using '{source}'")
+
+        # If there are zero-importance features and at least one positive-importance feature,
+        # drop exact-zero features and retrain once on the reduced set.
         zero_feats = [c for c, v in feat_imp.items() if v == 0.0]
-        if zero_feats:
+        pos_feats = [c for c, v in feat_imp.items() if v > 0.0]
+        if zero_feats and pos_feats and (len(pos_feats) >= 3):
             print(f"[train] dropping {len(zero_feats)} zero-importance features: {zero_feats[:10]}{'...' if len(zero_feats)>10 else ''}")
-            keep_cols = [c for c in feat_names if c not in zero_feats]
-            if len(keep_cols) < len(feat_names) and len(keep_cols) >= 3:
-                X_train_re = X_train[keep_cols]
-                X_val_re = X_val[keep_cols]
-                lgb_train_re = lgb.Dataset(X_train_re, label=y_train)
-                lgb_valid_re = lgb.Dataset(X_val_re, label=y_val, reference=lgb_train_re)
-                num_round_re = min(150, num_round)
-                callbacks_re = [lgb.callback.early_stopping(50), _time_limit_callback(MAX_TRAIN_SECONDS)]
-                try:
-                    booster = lgb.train(
-                        lgb_params,
-                        lgb_train_re,
-                        num_boost_round=num_round_re,
-                        valid_sets=[lgb_train_re, lgb_valid_re],
-                        valid_names=['train', 'valid'],
-                        callbacks=callbacks_re
-                    )
-                    model = booster
-                    # recompute combined importance after retrain
-                    fi_split = np.array(model.feature_importance(importance_type="split"))
-                    fi_gain = np.array(model.feature_importance(importance_type="gain"))
-                    combined = fi_gain.astype(float)
-                    if combined.sum() <= 0:
-                        combined = fi_split.astype(float)
-                    if combined.sum() > 0:
-                        norm = combined / combined.sum()
-                    else:
-                        norm = np.ones_like(combined) / len(combined)
-                    feat_imp = dict(zip(keep_cols, (norm * 100.0).round(6).tolist()))
-                    # update X to reduced columns for metadata & saving
-                    X = X[keep_cols]
-                    # save updated model after retrain
-                    joblib.dump(model, LATEST_MODEL_PATH)
-                    print(f"[train] saved retrained model (reduced features): {LATEST_MODEL_PATH.resolve()}")
-                except Exception as _e:
-                    print(f"[train] retrain on reduced features failed: {_e}")
+            keep_cols = pos_feats
+            X_train_re = X_train[keep_cols]
+            X_val_re = X_val[keep_cols]
+            lgb_train_re = lgb.Dataset(X_train_re, label=y_train)
+            lgb_valid_re = lgb.Dataset(X_val_re, label=y_val, reference=lgb_train_re)
+            num_round_re = min(150, num_round)
+            callbacks_re = [lgb.callback.early_stopping(50), _time_limit_callback(MAX_TRAIN_SECONDS)]
+            try:
+                booster = lgb.train(
+                    lgb_params,
+                    lgb_train_re,
+                    num_boost_round=num_round_re,
+                    valid_sets=[lgb_train_re, lgb_valid_re],
+                    valid_names=['train', 'valid'],
+                    callbacks=callbacks_re
+                )
+                model = booster
+                # recompute importances using the same preferred type
+                fi_gain = np.array(model.feature_importance(importance_type="gain"))
+                fi_split = np.array(model.feature_importance(importance_type="split"))
+                if fi_gain.sum() > 0:
+                    scores = fi_gain.astype(float)
+                elif fi_split.sum() > 0:
+                    scores = fi_split.astype(float)
+                else:
+                    scores = np.zeros(len(keep_cols), dtype=float)
+                if scores.sum() > 0:
+                    norm = (scores / scores.sum()) * 100.0
+                    norm = norm.round(6)
+                    feat_imp = dict(zip(keep_cols, norm.tolist()))
+                else:
+                    feat_imp = dict(zip(keep_cols, [0.0] * len(keep_cols)))
+                X = X[keep_cols]
+                # save updated model after retrain
+                joblib.dump(model, LATEST_MODEL_PATH)
+                print(f"[train] saved retrained model (reduced features): {LATEST_MODEL_PATH.resolve()}")
+            except Exception as _e:
+                print(f"[train] retrain on reduced features failed: {_e}")
     except Exception as _e:
         print(f"[train] feature importance extraction failed: {_e}")
         feat_imp = {}

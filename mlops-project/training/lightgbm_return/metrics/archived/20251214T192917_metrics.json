@@ -1,5 +1,5 @@
 {
-  "trained_at": "2025-12-14T19:29:17.095161",
+  "trained_at": "2025-12-14T19:20:22.504545",
   "n_train": 1002,
   "n_val": 251,
   "features": [
@@ -34,17 +34,17 @@
   "val_rmse": 0.026941331098431203,
   "val_mae": 0.01917546946626098,
   "feature_importance": {
-    "return_lag1": 0.0,
-    "return_lag2": 0.0,
-    "ret_3": 0.0,
-    "ret_5": 0.0,
-    "ret_10": 0.0,
-    "ret_mean_5": 0.0,
-    "ret_std_5": 0.0,
-    "momentum_8": 0.0,
-    "rsi_14": 0.0,
-    "vol_ma5": 0.0,
-    "high_low_spread": 0.0,
-    "vol_x_std5": 0.0
+    "return_lag1": 8.333333,
+    "return_lag2": 8.333333,
+    "ret_3": 8.333333,
+    "ret_5": 8.333333,
+    "ret_10": 8.333333,
+    "ret_mean_5": 8.333333,
+    "ret_std_5": 8.333333,
+    "momentum_8": 8.333333,
+    "rsi_14": 8.333333,
+    "vol_ma5": 8.333333,
+    "high_low_spread": 8.333333,
+    "vol_x_std5": 8.333333
   }
 }
