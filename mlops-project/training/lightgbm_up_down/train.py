@@ -17,50 +17,51 @@ _features_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_features_module)
 prepare_ml_data = getattr(_features_module, "prepare_ml_data")
 
-def time_series_split(X, y, test_size=0.2):
-    """Split data maintaining chronological order."""
-    split_idx = int(len(X) * (1 - test_size))
-    
-    X_train = X.iloc[:split_idx]
-    X_test = X.iloc[split_idx:]
-    y_train = y.iloc[:split_idx]
-    y_test = y.iloc[split_idx:]
-    
-    print(f"Train set: {len(X_train)} samples")
-    print(f"Test set: {len(X_test)} samples")
-    
+def time_series_split(X, y, test_size=0.2, n_splits=5):
+    """Chronological split using TimeSeriesSplit, returning the last split as train/test."""
+    if n_splits <= 1:
+        # fallback to holdout
+        split_idx = int(len(X) * (1 - test_size))
+        return X.iloc[:split_idx], X.iloc[split_idx:], y.iloc[:split_idx], y.iloc[split_idx:]
+
+    tss = TimeSeriesSplit(n_splits=n_splits)
+    splits = list(tss.split(X))
+    train_idx, test_idx = splits[-1]
+    X_train = X.iloc[train_idx]
+    X_test = X.iloc[test_idx]
+    y_train = y.iloc[train_idx]
+    y_test = y.iloc[test_idx]
+    print(f"TimeSeriesSplit used: n_splits={n_splits}, train={len(X_train)}, test={len(X_test)}")
     return X_train, X_test, y_train, y_test
 
-def train_lightgbm(X_train, y_train, X_test=None, y_test=None):
-    """Train LightGBM classifier with early stopping if test data provided."""
-    
-    # LightGBM parameters for binary classification
+def train_lightgbm(X_train, y_train, X_valid=None, y_valid=None, random_seed: int = 42):
+    """Train LightGBM classifier with tuned defaults and early stopping when validation provided."""
     params = {
         'objective': 'binary',
         'metric': 'binary_logloss',
         'boosting_type': 'gbdt',
         'num_leaves': 31,
-        'learning_rate': 0.05,
+        'max_depth': 5,
+        'learning_rate': 0.03,
         'feature_fraction': 0.8,
         'bagging_fraction': 0.8,
         'bagging_freq': 5,
-        'verbose': 0,
-        'random_state': 42
+        'verbose': -1,
+        'random_state': random_seed
     }
-    
-    # Create LightGBM classifier
-    model = lgb.LGBMClassifier(**params, n_estimators=1000)
-    
-    # Train with early stopping if validation data available
-    if X_test is not None and y_test is not None:
+
+    model = lgb.LGBMClassifier(**params, n_estimators=300, n_jobs=-1)
+
+    if X_valid is not None and y_valid is not None:
         model.fit(
             X_train, y_train,
-            eval_set=[(X_test, y_test)],
+            eval_set=[(X_valid, y_valid)],
+            eval_metric='binary_logloss',
             callbacks=[lgb.early_stopping(50, verbose=False)]
         )
     else:
         model.fit(X_train, y_train)
-    
+
     return model
 
 def save_model_and_info(model, model_filename, feature_names, train_info):
@@ -113,7 +114,7 @@ def save_model_and_info(model, model_filename, feature_names, train_info):
     print(f"Training metrics saved to {latest_metrics_path.resolve()}")
     return latest_model_path
 
-def main():
+def main(horizon: int = 1, smooth_window: int | None = None, random_seed: int = 42):
     """Main training pipeline."""
     # Find CSV data
     data_dir = Path(__file__).resolve().parents[2] / "data"
@@ -122,26 +123,24 @@ def main():
     if not csv_files:
         raise FileNotFoundError("No CSV files found in data directory")
 
-    # Use first CSV file found
     csv_path = csv_files[0]
     print(f"Training on data from: {csv_path}")
 
-    # Prepare data
-    X, y = prepare_ml_data(csv_path)
+    # Prepare data (use horizon/smoothing options)
+    X, y = prepare_ml_data(csv_path, horizon=horizon, smooth_window=smooth_window, scale=False)
 
-    # Time series split
-    X_train, X_test, y_train, y_test = time_series_split(X, y, test_size=0.2)
+    # Chronological split using TimeSeriesSplit (take last split)
+    X_train, X_test, y_train, y_test = time_series_split(X, y, test_size=0.2, n_splits=5)
 
-    # Train model
+    # Train model with reproducible seed
     print("Training LightGBM model...")
-    model = train_lightgbm(X_train, y_train, X_test, y_test)
+    model = train_lightgbm(X_train, y_train, X_test, y_test, random_seed=random_seed)
 
     # Quick evaluation
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Test accuracy: {accuracy:.4f}")
 
-    # Training info for saving
     train_info = {
         'data_file': str(csv_path),
         'train_samples': len(X_train),
@@ -154,7 +153,7 @@ def main():
         ))
     }
 
-    # Save model and info to models/latest and metrics folder
+    # Save model and info
     model_filename = "lightgbm_up_down_model.pkl"
     model_path = save_model_and_info(model, model_filename, X.columns, train_info)
 
@@ -163,4 +162,5 @@ def main():
     return model, X_test, y_test
 
 if __name__ == "__main__":
-    model, X_test, y_test = main()
+    # default: 1-day horizon, no smoothing
+    model, X_test, y_test = main(horizon=1, smooth_window=None, random_seed=42)
