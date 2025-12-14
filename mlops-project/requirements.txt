@@ -8,3 +8,5 @@ matplotlib
 seaborn
 joblib
 numpy
+prophet
+cmdstanpy
