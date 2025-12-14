@@ -34,110 +34,123 @@ def _archive_if_exists(path: Path, archived_dir: Path, prefix: str):
         dest = archived_dir / f"{ts}_{prefix}"
         shutil.move(str(path), str(dest))
 
-def train(changepoint_prior_scale: float = 0.05, test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]:
+def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]:
     """
-    Train Prophet baseline. Returns metadata dictionary.
+    Train Prophet baseline with log-target and changepoint tuning.
     """
     df, regressors = prepare_prophet_df()
     if df.empty:
         raise RuntimeError("No data available for training")
 
-    # drop non-positive closes and keep original price for metrics
+    # keep only positive closes
     df = df.copy()
     df = df[df['y'] > 0]
     df['y_orig'] = df['y'].copy()
-    # log-transform target for Prophet training
     import numpy as np
     df['y'] = np.log(df['y'])
 
-    # chronological split into train / holdout test
+    # splits
     split_idx = int(len(df) * (1 - test_size_ratio))
     train_df = df.iloc[:split_idx].copy()
     test_df = df.iloc[split_idx:].copy()
 
-    # further split train_df into train_sub / val_sub for hyperparameter tuning (last 20% of train as val)
+    # internal val split for CPS tuning
     val_ratio = 0.2
     sub_split = int(len(train_df) * (1 - val_ratio))
     train_sub = train_df.iloc[:sub_split].copy()
     val_sub = train_df.iloc[sub_split:].copy()
 
-    # candidate changepoints
     cps_list = [0.01, 0.05, 0.1, 0.2]
     best_rmse = None
     best_cps = None
-    best_model = None
-
     from sklearn.metrics import mean_squared_error
     import math
 
     for cps in cps_list:
-        # init model with monthly seasonality
         m = Prophet(weekly_seasonality=True, yearly_seasonality=True, daily_seasonality=False,
-                    changepoint_prior_scale=cps)
-        # add custom monthly seasonality
+                    changepoint_prior_scale=cps, interval_width=0.8)
         m.add_seasonality(name='monthly', period=30.5, fourier_order=5)
         for r in regressors:
             m.add_regressor(r)
-        # fit on train_sub
         m.fit(train_sub)
-        # predict on val_sub
         forecast_val = m.predict(val_sub)
-        # invert log -> price
         y_pred = np.exp(forecast_val['yhat'].values)
-        # true original prices
         y_true = val_sub['y_orig'].values
-        # compute RMSE on original scale
         rmse = math.sqrt(mean_squared_error(y_true, y_pred))
         if best_rmse is None or rmse < best_rmse:
             best_rmse = rmse
             best_cps = cps
-            best_model = m
 
-    # Refit final model on full train_df with best_cps
+    # final model with best_cps
     model = Prophet(weekly_seasonality=True, yearly_seasonality=True, daily_seasonality=False,
-                    changepoint_prior_scale=best_cps)
+                    changepoint_prior_scale=best_cps, interval_width=0.8)
     model.add_seasonality(name='monthly', period=30.5, fourier_order=5)
     for r in regressors:
         model.add_regressor(r)
     model.fit(train_df)
 
-    # archive existing model if present
-    _archive_if_exists(LATEST_MODEL_PATH, ARCHIVED_DIR, "prophet_forecast.pkl")
+    # compute simple OLS regressor coefficients on train (log-space) for explainability
+    reg_coef = {}
+    try:
+        if regressors:
+            X = train_df[regressors].values
+            y = train_df['y'].values  # log-y
+            # add intercept
+            X_design = np.hstack([np.ones((X.shape[0],1)), X])
+            coefs, *_ = np.linalg.lstsq(X_design, y, rcond=None)
+            intercept = float(coefs[0])
+            for i, r in enumerate(regressors, start=1):
+                reg_coef[r] = float(coefs[i])
+            reg_coef = {"intercept": intercept, **reg_coef}
+    except Exception:
+        reg_coef = {}
 
-    # ensure latest dir
+    # archive and save model
+    _archive_if_exists(LATEST_MODEL_PATH, ARCHIVED_DIR, "prophet_forecast.pkl")
     LATEST_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     dump(model, LATEST_MODEL_PATH)
 
-    # generate and save training plots (non-interactive)
+    # plotting and changepoint visualization
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
     PLOTS_DIR = METRICS_LATEST_DIR / "plots"
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        # Predict on training dataframe to get fitted values (no leakage)
         forecast_train = model.predict(train_df)
-        # convert fitted log predictions back to price for plotting
         forecast_train['yhat'] = np.exp(forecast_train['yhat'])
         if 'yhat_lower' in forecast_train.columns:
             forecast_train['yhat_lower'] = np.exp(forecast_train['yhat_lower'])
         if 'yhat_upper' in forecast_train.columns:
             forecast_train['yhat_upper'] = np.exp(forecast_train['yhat_upper'])
-        # actual vs fitted (use model.plot which expects prophet-format forecast; we use the model.plot on forecast_train)
         fig = model.plot(forecast_train)
         fig.savefig(PLOTS_DIR / "train_actual_vs_fitted.png", dpi=150)
         plt.close(fig)
-        # components plot (trend/seasonality)
         comp_fig = model.plot_components(forecast_train)
-        comp_fig.savefig(PLOTS_DIR / "components.png", dpi=150)
+        comp_fig.savefig(PLOTS_DIR / "components_all.png", dpi=150)
         plt.close(comp_fig)
+        # changepoints: overlay on trend
+        try:
+            trend = model.predict(train_df)[['ds','trend']].set_index('ds')
+            fig2, ax2 = plt.subplots(figsize=(10,5))
+            ax2.plot(trend.index, np.exp(trend['trend']), label='trend (exp)')
+            # draw changepoints
+            if hasattr(model, 'changepoints') and model.changepoints is not None:
+                for cp in model.changepoints:
+                    ax2.axvline(cp, color='red', alpha=0.3, linestyle='--')
+            ax2.set_title("Trend with changepoints (exp scale)")
+            ax2.legend()
+            fig2.tight_layout()
+            fig2.savefig(PLOTS_DIR / "trend_changepoints.png", dpi=150)
+            plt.close(fig2)
+        except Exception:
+            pass
     except Exception as _plot_err:
         METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
         with open(METRICS_LATEST_DIR / "plot_error.txt", "w") as _f:
             _f.write(str(_plot_err))
 
-    # save training metadata (include selected changepoint)
+    # save metadata including selected changepoint and regressor coef
     METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
     metadata = {
         "trained_at": datetime.now().isoformat(),
@@ -149,9 +162,12 @@ def train(changepoint_prior_scale: float = 0.05, test_size_ratio: float = 0.2, r
         "regressors": regressors,
         "params": {
             "selected_changepoint_prior_scale": best_cps,
-            "candidate_changepoint_prior_scales": cps_list
+            "candidate_changepoint_prior_scales": cps_list,
+            "interval_width": 0.8,
+            "monthly_seasonality": {"period": 30.5, "fourier_order": 5}
         },
-        "validation_rmse": float(best_rmse)
+        "validation_rmse": float(best_rmse),
+        "regressor_coefs": reg_coef
     }
     with open(METRICS_LATEST_DIR / "training_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
