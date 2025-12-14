@@ -120,6 +120,42 @@ def evaluate():
     }
     with open(METRICS_LATEST, "w") as f:
         json.dump(final_metrics, f, indent=2)
+    print(f"[eval] saved metrics: {METRICS_LATEST.resolve()}")
+
+    # --- Metrics plots (MAE, RMSE, MAPE per horizon) ---
+    try:
+        metrics_plot_path = PLOTS_DIR / "metrics_bars.png"
+        horizons = []
+        maes = []
+        rmses = []
+        mapes = []
+        for hkey in sorted(final_metrics["metrics"].keys()):
+            item = final_metrics["metrics"][hkey]
+            horizons.append(hkey)
+            maes.append(item.get("mae") if item.get("mae") is not None else float("nan"))
+            rmses.append(item.get("rmse") if item.get("rmse") is not None else float("nan"))
+            mapes.append(item.get("mape") if item.get("mape") is not None else float("nan"))
+
+        x = np.arange(len(horizons))
+        width = 0.25
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.bar(x - width, maes, width, label='MAE')
+        ax.bar(x, rmses, width, label='RMSE')
+        ax.bar(x + width, mapes, width, label='MAPE')
+        ax.set_xticks(x)
+        ax.set_xticklabels(horizons)
+        ax.set_ylabel('Metric value')
+        ax.set_title('Forecast metrics by horizon')
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(metrics_plot_path, dpi=150)
+        plt.close(fig)
+        print(f"[eval] saved metrics bar plot: {metrics_plot_path.resolve()}")
+    except Exception as _met_err:
+        err_metrics_path = METRICS_LATEST.parent / "plot_error_metrics.txt"
+        with open(err_metrics_path, "w") as _f:
+            _f.write(str(_met_err))
+        print(f"[eval] metrics plotting failed, see: {err_metrics_path.resolve()}")
 
     # build plot dataframe: recent history + test + forecast (forecast in price scale)
     hist_tail = train_df[['ds','y']].copy()
@@ -141,12 +177,14 @@ def evaluate():
     fig.tight_layout()
     fig.savefig(PLOTS_DIR / "actual_vs_forecast.png", dpi=150)
     plt.close(fig)
+    print(f"[eval] saved actual vs forecast plot: {(PLOTS_DIR / 'actual_vs_forecast.png').resolve()}")
 
     # components and changepoint plots
     try:
         comp_fig = model.plot_components(forecast)
         comp_fig.savefig(PLOTS_DIR / "components.png", dpi=150)
         plt.close(comp_fig)
+        print(f"[eval] saved components plot: {(PLOTS_DIR / 'components.png').resolve()}")
     except Exception:
         pass
 
@@ -163,6 +201,7 @@ def evaluate():
         fig2.tight_layout()
         fig2.savefig(PLOTS_DIR / "trend_changepoints.png", dpi=150)
         plt.close(fig2)
+        print(f"[eval] saved trend changepoints plot: {(PLOTS_DIR / 'trend_changepoints.png').resolve()}")
     except Exception:
         pass
 

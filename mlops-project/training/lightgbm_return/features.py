@@ -1,0 +1,168 @@
+"""
+Feature engineering for LightGBM return regression.
+
+Produces:
+- X (DataFrame of features)
+- y (Series of 1-day forward returns)
+- dates (Series of ds corresponding to each row)
+"""
+from pathlib import Path
+import pandas as pd
+import numpy as np
+from typing import Tuple, List
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIRS = [REPO_ROOT / "data", REPO_ROOT / "data" / "raw"]
+
+def _find_csv_files() -> List[Path]:
+    files = []
+    for d in DATA_DIRS:
+        if d.exists():
+            files.extend(sorted([p for p in d.glob("*.csv")]))
+    if not files:
+        raise FileNotFoundError(f"No CSV files found in {DATA_DIRS}")
+    return files
+
+def _load_all(files: List[Path]) -> pd.DataFrame:
+    """Robust CSV loading: skip malformed lines and extra headers."""
+    dfs = []
+    for p in files:
+        try:
+            df = pd.read_csv(p, engine='python', on_bad_lines='skip')
+        except TypeError:
+            df = pd.read_csv(p, engine='python', error_bad_lines=False)  # older pandas fallback
+        df.columns = [c.strip() for c in df.columns]
+        dfs.append(df)
+    full = pd.concat(dfs, ignore_index=True)
+    return full
+
+def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Streamlined, memory-only feature builder:
+    - robust CSV parsing (skips malformed rows)
+    - creates multi-day targets via `horizons` (e.g. [3] or [5])
+    - adds rolling returns (3/5/10), rolling stats on returns, compact engineered features (8-12)
+    - drops constant/all-NaN columns, optional StandardScaler returned when scale=True
+    """
+    files = _find_csv_files()
+    raw = _load_all(files)
+
+    # detect date column robustly
+    date_cols = [c for c in ['Date','date','Datetime','datetime','ds','timestamp'] if c in raw.columns]
+    if not date_cols:
+        raise ValueError("No date column found in CSVs")
+    date_col = date_cols[0]
+    raw[date_col] = pd.to_datetime(raw[date_col], errors='coerce')
+    raw = raw.dropna(subset=[date_col])
+    raw = raw.sort_values(date_col).drop_duplicates(subset=[date_col], keep='first')
+    raw = raw.set_index(date_col)
+
+    # coerce numeric OHLCV
+    for c in ['Open','High','Low','Close','Adj Close','Volume']:
+        if c in raw.columns:
+            raw[c] = pd.to_numeric(raw[c], errors='coerce')
+    if 'Close' not in raw.columns and 'Adj Close' in raw.columns:
+        raw['Close'] = raw['Adj Close']
+
+    df = raw.copy()
+    # require valid Close
+    df = df[pd.to_numeric(df['Close'], errors='coerce').notna()]
+
+    # daily return (past)
+    df['daily_return'] = df['Close'].pct_change()
+
+    # multi-day targets
+    if horizons is None:
+        horizons = [1]
+    for h in horizons:
+        df[f'return_{h}d'] = (df['Close'].shift(-h) - df['Close']) / df['Close']
+
+    # rolling returns (periodic pct change)
+    df['ret_3'] = df['Close'].pct_change(periods=3)
+    df['ret_5'] = df['Close'].pct_change(periods=5)
+    df['ret_10'] = df['Close'].pct_change(periods=10)
+
+    # rolling stats on daily returns (3/5/10)
+    for w in (3,5,10):
+        df[f'ret_mean_{w}'] = df['daily_return'].rolling(w, min_periods=1).mean()
+        df[f'ret_std_{w}']  = df['daily_return'].rolling(w, min_periods=1).std().fillna(0)
+        # skew / kurtosis may be noisy on small windows but include for signal
+        df[f'ret_skew_{w}'] = df['daily_return'].rolling(w, min_periods=1).skew().fillna(0)
+        df[f'ret_kurt_{w}'] = df['daily_return'].rolling(w, min_periods=1).kurt().fillna(0)
+
+    # compact engineered features (prefer non-redundant set)
+    df['return_lag1'] = df['daily_return'].shift(1)
+    df['return_lag2'] = df['daily_return'].shift(2)
+
+    df['ma5'] = df['Close'].rolling(5).mean()
+    df['ma10'] = df['Close'].rolling(10).mean()
+    df['std5'] = df['daily_return'].rolling(5).std()
+
+    df['ewma_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+    df['momentum_8'] = (df['Close'] - df['ewma_8']) / df['ewma_8'].replace(0, np.nan)
+
+    # RSI scaled 0-1
+    delta = df['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    roll_up = gain.rolling(14, min_periods=1).mean()
+    roll_down = loss.rolling(14, min_periods=1).mean()
+    rs = roll_up / roll_down.replace(0, np.nan)
+    df['rsi_14'] = (100 - (100 / (1 + rs))).fillna(50) / 100.0
+
+    # volume/volatility interactions (normalized)
+    if 'Volume' in df.columns:
+        df['vol_ma5'] = df['Volume'].rolling(5).mean().fillna(0)
+    else:
+        df['vol_ma5'] = 0.0
+    df['high_low_spread'] = ((df.get('High', df['Close']) - df.get('Low', df['Close'])) / df['Close']).fillna(0)
+    df['vol_x_std5'] = df['vol_ma5'] * df['std5'].fillna(0)
+
+    # choose a compact candidate set (8-12 features)
+    candidate_features = [
+        'return_lag1','return_lag2',
+        'ret_3','ret_5','ret_10',
+        'ret_mean_5','ret_std_5',
+        'momentum_8','rsi_14',
+        'vol_ma5','high_low_spread','vol_x_std5'
+    ]
+
+    # keep only features that exist and are numeric
+    feature_cols = [c for c in candidate_features if c in df.columns]
+    if not feature_cols:
+        raise RuntimeError("No engineered features available")
+
+    # forward-fill (past-only) then fill remaining with 0 and drop constant / near-constant
+    df[feature_cols] = df[feature_cols].ffill().fillna(0)
+    nunique = df[feature_cols].nunique(dropna=True)
+    stds = df[feature_cols].std(ddof=0)
+    kept = [c for c in feature_cols if nunique.get(c,0) > 1 and not np.isclose(stds.get(c,0), 0.0)]
+    if not kept:
+        kept = feature_cols
+    feature_cols = kept
+
+    # build X/y/dates aligned, drop rows where target is NaN
+    X_full = df[feature_cols].copy()
+    target_name = f'return_{horizons[0]}d'
+    df = df.dropna(subset=[target_name])
+    y = df[target_name].copy()
+    dates = df.index.to_series()
+    X = X_full.loc[y.index]
+
+    # scaling optional
+    scaler = None
+    if scale:
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
+
+    X = X.fillna(0)
+    y = y.fillna(0)
+
+    if scale:
+        return X, y, dates, scaler
+    return X, y, dates
+
+if __name__ == "__main__":
+    X, y, dates = prepare_features()
+    print(f"Prepared features: X.shape={X.shape}, y.shape={y.shape}")

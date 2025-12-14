@@ -117,38 +117,38 @@ def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]
     PLOTS_DIR = METRICS_LATEST_DIR / "plots"
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     try:
+        # Predict on training dataframe to get fitted values (no leakage)
         forecast_train = model.predict(train_df)
+        # convert fitted log predictions back to price for plotting
         forecast_train['yhat'] = np.exp(forecast_train['yhat'])
         if 'yhat_lower' in forecast_train.columns:
             forecast_train['yhat_lower'] = np.exp(forecast_train['yhat_lower'])
         if 'yhat_upper' in forecast_train.columns:
             forecast_train['yhat_upper'] = np.exp(forecast_train['yhat_upper'])
+        # actual vs fitted (use model.plot which expects prophet-format forecast; we use the model.plot on forecast_train)
         fig = model.plot(forecast_train)
-        fig.savefig(PLOTS_DIR / "train_actual_vs_fitted.png", dpi=150)
+        fig_path = PLOTS_DIR / "train_actual_vs_fitted.png"
+        fig.savefig(fig_path, dpi=150)
         plt.close(fig)
+        print(f"[train] saved training actual vs fitted plot: {fig_path.resolve()}")
+        # components plot (trend/seasonality)
         comp_fig = model.plot_components(forecast_train)
-        comp_fig.savefig(PLOTS_DIR / "components_all.png", dpi=150)
+        comp_path = PLOTS_DIR / "components.png"
+        comp_fig.savefig(comp_path, dpi=150)
         plt.close(comp_fig)
-        # changepoints: overlay on trend
-        try:
-            trend = model.predict(train_df)[['ds','trend']].set_index('ds')
-            fig2, ax2 = plt.subplots(figsize=(10,5))
-            ax2.plot(trend.index, np.exp(trend['trend']), label='trend (exp)')
-            # draw changepoints
-            if hasattr(model, 'changepoints') and model.changepoints is not None:
-                for cp in model.changepoints:
-                    ax2.axvline(cp, color='red', alpha=0.3, linestyle='--')
-            ax2.set_title("Trend with changepoints (exp scale)")
-            ax2.legend()
-            fig2.tight_layout()
-            fig2.savefig(PLOTS_DIR / "trend_changepoints.png", dpi=150)
-            plt.close(fig2)
-        except Exception:
-            pass
+        print(f"[train] saved components plot: {comp_path.resolve()}")
     except Exception as _plot_err:
+        # record plotting error for debugging
         METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
-        with open(METRICS_LATEST_DIR / "plot_error.txt", "w") as _f:
+        err_path = METRICS_LATEST_DIR / "plot_error.txt"
+        with open(err_path, "w") as _f:
             _f.write(str(_plot_err))
+        print(f"[train] plotting failed, see: {err_path.resolve()}")
+        pass
+    # except Exception as _plot_err:
+    #     METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
+    #     with open(METRICS_LATEST_DIR / "plot_error.txt", "w") as _f:
+    #         _f.write(str(_plot_err))
 
     # save metadata including selected changepoint and regressor coef
     METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -171,6 +171,7 @@ def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]
     }
     with open(METRICS_LATEST_DIR / "training_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
+    print(f"[train] saved training metadata: {(METRICS_LATEST_DIR / 'training_metadata.json').resolve()}")
 
     return metadata
 
