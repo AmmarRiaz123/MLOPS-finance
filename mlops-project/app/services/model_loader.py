@@ -1,1 +1,0 @@
-# Model loader service (placeholder)
