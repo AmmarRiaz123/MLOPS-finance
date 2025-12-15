@@ -7,6 +7,5 @@ class RegimeRequest(BaseModel):
 
 class RegimeResponse(BaseModel):
     model: str
-    regime_id: int
-    regime_label: str
-    probabilities: Optional[List[float]] = None
+    regime: str                      # 'bull' | 'neutral' | 'bear'
+    score: Optional[float] = None    # confidence score in [0.0, 1.0]
