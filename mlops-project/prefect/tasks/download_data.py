@@ -63,21 +63,3 @@ def download_symbol(symbol: str,
     df.to_csv(out_path, index=False)
     return str(out_path)
 
-# CLI / demo entry
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download data via yfinance (local demo).")
-    parser.add_argument("--symbol", default="IBM", help="Ticker symbol")
-    parser.add_argument("--interval", default=None, help="yfinance interval (1d,1m,1h,... )")
-    parser.add_argument("--start", default=None, help="Start date YYYY-MM-DD")
-    parser.add_argument("--end", default=None, help="End date YYYY-MM-DD")
-    parser.add_argument("--period", default=None, help="yfinance period (e.g. 1y, 5y, max)")
-    parser.add_argument("--outdir", default=None, help="Output directory (overrides DATA_DIR)")
-    args = parser.parse_args()
-
-    result = download_symbol(symbol=args.symbol,
-                             interval=args.interval,
-                             start=args.start,
-                             end=args.end,
-                             period=args.period,
-                             outdir=args.outdir)
-    print(f"Done: {result}")

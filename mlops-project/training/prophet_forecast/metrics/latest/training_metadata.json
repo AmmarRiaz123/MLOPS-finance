@@ -1,10 +1,10 @@
 {
-  "trained_at": "2025-12-14T16:33:00.847104",
-  "data_start": "2020-12-14T00:00:00",
-  "data_end": "2025-12-12T00:00:00",
-  "train_end": "2024-12-10T00:00:00",
-  "n_train": 1004,
-  "n_test": 252,
+  "trained_at": "2025-12-15T21:09:08.027114",
+  "data_start": "1962-01-02T00:00:00",
+  "data_end": "2025-12-15T00:00:00",
+  "train_end": "2013-02-27T00:00:00",
+  "n_train": 12877,
+  "n_test": 3220,
   "regressors": [
     "volume",
     "high_low_spread",
@@ -24,11 +24,11 @@
       "fourier_order": 5
     }
   },
-  "validation_rmse": 23.15183473635869,
+  "validation_rmse": 31.360499847297636,
   "regressor_coefs": {
-    "intercept": 5.71195684601675,
-    "volume": -0.002775126349136428,
-    "high_low_spread": 0.0016544068475127256,
-    "open_close_spread": 0.006387703780956794
+    "intercept": 1.1311164295369327,
+    "volume": -0.8849448948212506,
+    "high_low_spread": -0.005533187139568491,
+    "open_close_spread": 0.05146624472316391
   }
 }

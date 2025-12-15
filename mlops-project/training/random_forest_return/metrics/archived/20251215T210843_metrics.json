@@ -1,0 +1,40 @@
+{
+  "trained_at": "2025-12-15T21:06:37.376095",
+  "horizon": 1,
+  "n_train": 12876,
+  "n_val": 3220,
+  "params": {
+    "n_estimators": 200,
+    "max_depth": null,
+    "min_samples_split": 2,
+    "max_features": "sqrt",
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "val_rmse": 2.3472021197518247,
+  "val_mae": 1.7821925297278556,
+  "feature_importance": {
+    "return_lag1": 3.306856,
+    "return_lag2": 3.850837,
+    "return_lag3": 3.485414,
+    "return_lag5": 2.899872,
+    "return_lag10": 3.412023,
+    "ma5": 2.827939,
+    "ma10": 2.614166,
+    "ma20": 2.69649,
+    "std5": 4.240754,
+    "std10": 6.031112,
+    "std20": 6.841017,
+    "momentum_8": 15.750334,
+    "vol_ma5": 3.023501,
+    "vol_ma10": 2.552912,
+    "high_low_spread": 3.525324,
+    "open_close_spread": 2.707243,
+    "vol_x_std5": 3.532457,
+    "rsi_14": 5.121445,
+    "macd": 3.829315,
+    "macd_signal": 2.679796,
+    "stoch_k": 11.065474,
+    "stoch_d": 4.005718
+  }
+}

@@ -1,7 +1,7 @@
 {
-  "trained_at": "2025-12-14T19:29:17.095161",
-  "n_train": 1002,
-  "n_val": 251,
+  "trained_at": "2025-12-15T21:08:37.764343",
+  "n_train": 12875,
+  "n_val": 3219,
   "features": [
     "return_lag1",
     "return_lag2",
@@ -19,7 +19,7 @@
   "params": {
     "num_leaves": 12,
     "max_depth": 3,
-    "learning_rate": 0.01,
+    "learning_rate": 0.03,
     "n_estimators": 100,
     "feature_fraction": 0.7,
     "bagging_fraction": 0.8,
@@ -31,20 +31,20 @@
     "min_gain_to_split": 0.01,
     "boosting_type": "gbdt"
   },
-  "val_rmse": 0.026941331098431203,
-  "val_mae": 0.01917546946626098,
+  "val_rmse": 2.1924282013336733,
+  "val_mae": 1.827293141282068,
   "feature_importance": {
-    "return_lag1": 0.0,
-    "return_lag2": 0.0,
-    "ret_3": 0.0,
-    "ret_5": 0.0,
-    "ret_10": 0.0,
-    "ret_mean_5": 0.0,
-    "ret_std_5": 0.0,
-    "momentum_8": 0.0,
-    "rsi_14": 0.0,
-    "vol_ma5": 0.0,
-    "high_low_spread": 0.0,
-    "vol_x_std5": 0.0
+    "return_lag1": 3.839453,
+    "return_lag2": 1.877312,
+    "ret_3": 5.532781,
+    "ret_5": 8.647853,
+    "ret_10": 7.575704,
+    "ret_mean_5": 3.02883,
+    "ret_std_5": 7.97265,
+    "momentum_8": 51.804042,
+    "rsi_14": 2.357061,
+    "vol_ma5": 2.962489,
+    "high_low_spread": 2.529875,
+    "vol_x_std5": 1.87195
   }
 }

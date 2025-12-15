@@ -1,0 +1,25 @@
+{
+  "lightgbm_return": {
+    "status": "failed",
+    "error": "No module named 'features'"
+  },
+  "lightgbm_up_down": {
+    "status": "no_evaluate_fn"
+  },
+  "lightgbm_volatility": {
+    "status": "failed",
+    "error": "No module named 'features'"
+  },
+  "market_regime_hmm": {
+    "status": "failed",
+    "error": "No module named 'features'"
+  },
+  "prophet_forecast": {
+    "status": "failed",
+    "error": "No module named 'features'"
+  },
+  "random_forest_return": {
+    "status": "failed",
+    "error": "No module named 'features'"
+  }
+}
