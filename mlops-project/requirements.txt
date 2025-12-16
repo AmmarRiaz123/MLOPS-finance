@@ -1,3 +1,12 @@
 python-dotenv
 prefect
-requests
+yfinance
+pandas
+lightgbm
+scikit-learn
+matplotlib
+seaborn
+joblib
+numpy
+prophet
+cmdstanpy

@@ -1,0 +1,16 @@
+{
+  "features": [
+    "return_lag1",
+    "return_lag2",
+    "ret_3",
+    "ret_5",
+    "ret_10",
+    "ret_mean_5",
+    "ret_std_5",
+    "momentum_8",
+    "rsi_14",
+    "vol_ma5",
+    "high_low_spread",
+    "vol_x_std5"
+  ]
+}

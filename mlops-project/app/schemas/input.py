@@ -1,1 +1,0 @@
-# Input schema (placeholder)

@@ -1,0 +1,14 @@
+{
+  "data_file": "C:\\Users\\Dell\\Desktop\\MLOPS-finance\\mlops-project\\data\\AAPL_yfinance_1d.csv",
+  "train_samples": 988,
+  "test_samples": 248,
+  "features_count": 39,
+  "test_accuracy": 0.5362903225806451,
+  "feature_importance_top5": {
+    "return_skew_5": 16,
+    "ma5_to_ma10": 15,
+    "high_low_spread": 15,
+    "open_close_spread": 14,
+    "return_lag3": 14
+  }
+}

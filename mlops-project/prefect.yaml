@@ -1,0 +1,15 @@
+name: mlops-project
+prefect-version: "3.6.6"
+
+build: []
+push: []
+pull: []
+
+deployments:
+  - name: daily-2am
+    entrypoint: prefect/flows/retraining_flow.py:retraining_flow
+    work_pool:
+      name: default-pool
+    schedules:
+      - cron: "0 2 * * *"
+        timezone: "UTC"

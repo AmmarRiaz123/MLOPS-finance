@@ -1,0 +1,7 @@
+{
+  "features": [
+    "volume",
+    "high_low_spread",
+    "open_close_spread"
+  ]
+}

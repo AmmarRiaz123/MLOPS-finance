@@ -1,0 +1,60 @@
+{
+  "model_info": {
+    "data_file": "C:\\Users\\Dell\\Desktop\\MLOPS-finance\\mlops-project\\data\\AAPL_yfinance_1d.csv",
+    "train_samples": 1030,
+    "test_samples": 206,
+    "features_count": 39,
+    "test_accuracy": 0.5339805825242718,
+    "feature_importance_top5": {
+      "volume_ma_5": 24,
+      "return_lag1": 23,
+      "macd_signal": 22,
+      "return_lag5": 22,
+      "return_kurt_10": 19
+    }
+  },
+  "test_metrics": {
+    "accuracy": 0.5339805825242718,
+    "precision": 0.5597014925373134,
+    "recall": 0.6696428571428571,
+    "f1_score": 0.6097560975609756,
+    "roc_auc": 0.5600303951367781
+  },
+  "confusion_matrix": [
+    [
+      35,
+      59
+    ],
+    [
+      37,
+      75
+    ]
+  ],
+  "classification_report": {
+    "Down": {
+      "precision": 0.4861111111111111,
+      "recall": 0.3723404255319149,
+      "f1-score": 0.42168674698795183,
+      "support": 94.0
+    },
+    "Up": {
+      "precision": 0.5597014925373134,
+      "recall": 0.6696428571428571,
+      "f1-score": 0.6097560975609756,
+      "support": 112.0
+    },
+    "accuracy": 0.5339805825242718,
+    "macro avg": {
+      "precision": 0.5229063018242123,
+      "recall": 0.520991641337386,
+      "f1-score": 0.5157214222744637,
+      "support": 206.0
+    },
+    "weighted avg": {
+      "precision": 0.5261214155758425,
+      "recall": 0.5339805825242718,
+      "f1-score": 0.5239380443868773,
+      "support": 206.0
+    }
+  }
+}
