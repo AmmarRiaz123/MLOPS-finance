@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtualenvs
+venv/
+.venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local data (optional; mount as volume if you want it at runtime)
+data/
+data/raw/
+
+# Prefect runtime state/logs (optional)
+.prefect/
+prefect.db
+
+# Git
+.git/
+.gitignore
+
+# Frontend is outside this folder; nothing to ignore here for it

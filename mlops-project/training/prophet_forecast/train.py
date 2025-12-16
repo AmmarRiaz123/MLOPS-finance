@@ -1,3 +1,6 @@
+import os
+import sys
+import traceback
 from pathlib import Path
 import json
 import shutil
@@ -18,6 +21,22 @@ except Exception as e:
     ) from e
 
 from features import prepare_prophet_df
+
+# --- best-effort Discord alerting ---
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]  # mlops-project
 MODELS_DIR = REPO_ROOT / "models"
@@ -187,5 +206,9 @@ def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]
     return metadata
 
 if __name__ == "__main__":
-    meta = train()
-    print("Training metadata:", meta)
+    try:
+        meta = train()
+        print("Training metadata:", meta)
+    except Exception as e:
+        _alert_train_failure("prophet_forecast", e)
+        raise

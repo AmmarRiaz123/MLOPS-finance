@@ -11,12 +11,31 @@ import logging
 import joblib
 import argparse
 import numpy as np
+import os
+import sys
+import traceback
 
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 from features import prepare_features
+
+# --- best-effort Discord alerting ---
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = REPO_ROOT / "models"
@@ -123,6 +142,18 @@ def train(model_type: str = "rf",
     rmse = float(np.sqrt(mean_squared_error(y_val, y_pred)))
     mae = float(mean_absolute_error(y_val, y_pred))
 
+    # optional alert on threshold breach
+    try:
+        thr = os.getenv("ALERT_RF_RETURN_RMSE_MAX")
+        if thr is not None and thr.strip() != "":
+            max_rmse = float(thr)
+            if rmse > max_rmse:
+                send_discord_alert(
+                    f"[train][random_forest_return] RMSE threshold breached: rmse={rmse:.6f} > max={max_rmse:.6f}"
+                )
+    except Exception as _alert_err:
+        logging.warning("RMSE alert check failed: %s", _alert_err)
+
     # feature importance
     try:
         fi = model.feature_importances_
@@ -179,4 +210,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--tune", action="store_true")
     args = parser.parse_args()
-    train(model_type=args.model, horizon=args.horizon, test_size_ratio=args.test_size, random_state=args.seed, tune=args.tune)
+    try:
+        train(model_type=args.model, horizon=args.horizon, test_size_ratio=args.test_size, random_state=args.seed, tune=args.tune)
+    except Exception as e:
+        _alert_train_failure("random_forest_return", e)
+        raise

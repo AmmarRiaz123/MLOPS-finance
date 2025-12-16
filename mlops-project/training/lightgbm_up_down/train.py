@@ -9,6 +9,9 @@ import json
 import shutil
 from datetime import datetime
 import importlib.util
+import os
+import sys
+import traceback
 
 # Load the local features.py module
 _features_path = Path(__file__).resolve().parent / "features.py"
@@ -16,6 +19,22 @@ _spec = importlib.util.spec_from_file_location("lightgbm_up_down.features", str(
 _features_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_features_module)
 prepare_ml_data = getattr(_features_module, "prepare_ml_data")
+
+# --- best-effort Discord alerting ---
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 def time_series_split(X, y, test_size=0.2, n_splits=5):
     """Chronological split using TimeSeriesSplit, returning the last split as train/test."""
@@ -173,5 +192,9 @@ def main(horizon: int = 1, smooth_window: int | None = None, random_seed: int = 
     return model, X_test, y_test
 
 if __name__ == "__main__":
-    # default: 1-day horizon, no smoothing
-    model, X_test, y_test = main(horizon=1, smooth_window=None, random_seed=42)
+    try:
+        # default: 1-day horizon, no smoothing
+        model, X_test, y_test = main(horizon=1, smooth_window=None, random_seed=42)
+    except Exception as e:
+        _alert_train_failure("lightgbm_up_down", e)
+        raise

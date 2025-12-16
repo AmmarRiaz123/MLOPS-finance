@@ -34,6 +34,7 @@ A Next.js dashboard for interacting with the MLOps Finance API.
 ## Environment Variables
 
 - `NEXT_PUBLIC_API_URL`: FastAPI backend URL (default: http://127.0.0.1:8000)
+- `DISCORD_WEBHOOK_URL`: Discord webhook URL used by the FastAPI backend alerting module (not used by the Next.js app directly)
 
 ## Usage
 

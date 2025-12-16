@@ -1,3 +1,6 @@
+import os
+import sys
+import traceback
 from pathlib import Path
 import json, shutil
 from datetime import datetime
@@ -8,6 +11,22 @@ import lightgbm as lgb
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 from features import prepare_features
+
+# --- best-effort Discord alerting ---
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = REPO_ROOT / "models"
@@ -151,9 +170,13 @@ def train(random_seed: int = 42, test_size_ratio: float = 0.2, tune: bool = True
 	return {"model_path": str(LATEST_MODEL_PATH), "metrics_path": str(METRICS_LATEST), "val_rmse": rmse}
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--seed", type=int, default=42)
-	parser.add_argument("--test_size", type=float, default=0.2)
-	parser.add_argument("--tune", action="store_true")
-	args = parser.parse_args()
-	train(random_seed=args.seed, test_size_ratio=args.test_size, tune=args.tune)
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--seed", type=int, default=42)
+        parser.add_argument("--test_size", type=float, default=0.2)
+        parser.add_argument("--tune", action="store_true")
+        args = parser.parse_args()
+        train(random_seed=args.seed, test_size_ratio=args.test_size, tune=args.tune)
+    except Exception as e:
+        _alert_train_failure("lightgbm_volatility", e)
+        raise

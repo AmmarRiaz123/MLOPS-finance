@@ -21,6 +21,13 @@ except Exception:
     spec.loader.exec_module(module)
     download_symbol = getattr(module, "download_symbol")
 
+# --- discord alerting (best-effort; flow must still run without it) ---
+try:
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
 LOG = logging.getLogger("retraining_flow")
 LOG.setLevel(logging.INFO)
 
@@ -39,6 +46,7 @@ def _run_training_script(script_path: Path, python_exe: Optional[str] = None) ->
         return {"script": str(script_path), "ok": True, "stdout": res.stdout, "stderr": res.stderr}
     except subprocess.CalledProcessError as exc:
         LOG.error("Training failed for %s: %s", script_path, exc.stderr or exc)
+        send_discord_alert(f"[retraining_flow] Training failed: {script_path}\n{(exc.stderr or str(exc))[:1500]}")
         return {"script": str(script_path), "ok": False, "stdout": getattr(exc, "stdout", ""), "stderr": getattr(exc, "stderr", str(exc))}
 
 
@@ -68,12 +76,12 @@ def retraining_flow(symbols: Optional[List[str]] = None,
     for s in symbols:
         LOG.info("Downloading symbol: %s", s)
         try:
-            # call the existing Prefect task - this will execute the download logic
             out_path = download_symbol(s)  # calling task directly executes it
             LOG.info("Downloaded %s -> %s", s, out_path)
             downloaded_files.append(out_path)
         except Exception as e:
             LOG.error("Download failed for %s: %s", s, e)
+            send_discord_alert(f"[retraining_flow] Download failed for {s}: {e}")
             downloaded_files.append({"symbol": s, "error": str(e)})
 
     # 2) Define training script paths (relative to repo root)

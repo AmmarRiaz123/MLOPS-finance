@@ -11,6 +11,8 @@ import argparse
 import joblib
 import numpy as np
 import os
+import sys
+import traceback
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error
 import pandas as pd
@@ -26,6 +28,21 @@ ARCHIVED_MODELS = MODELS_ROOT / "archived"
 METRICS_ROOT = Path(__file__).resolve().parent / "metrics"
 METRICS_LATEST_DIR = METRICS_ROOT / "latest"
 METRICS_ARCHIVED_DIR = METRICS_ROOT / "archived"
+
+# --- best-effort Discord alerting (training must still run without it) ---
+try:
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 def _archive_if_exists(path: Path, archived_dir: Path, prefix: str):
     if path.exists():
@@ -343,4 +360,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test_size", type=float, default=0.2)
     args = parser.parse_args()
-    train(random_seed=args.seed, test_size_ratio=args.test_size)
+    try:
+        train(random_seed=args.seed, test_size_ratio=args.test_size)
+    except Exception as e:
+        _alert_train_failure("lightgbm_return", e)
+        raise

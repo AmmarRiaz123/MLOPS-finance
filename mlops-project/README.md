@@ -84,33 +84,156 @@ Summary of concrete changes and implementations done while reviewing and improvi
   - Created/updated `app/routers/__init__.py` to expose router objects properly and avoid collisions with Python keywords (exposed `return_router` for the `return.py` router).
   - Added `mlops-project/README.md` (this file) summarizing everything.
 
+### Final state (current)
+This section reflects the **current working state** after all fixes:
+
+- **All FastAPI endpoints are functional and use real trained artifacts** from `models/latest/*.pkl`.
+- **No prediction endpoints “fake” outputs**: each prediction path calls the loaded model’s `.predict()` (or Prophet `.predict()`), using **model-local feature engineering** from `training/<model>/features.py`.
+- **Canonical feature contracts are enforced**:
+  - `training/<model>/metrics/latest/training_features.json` is treated as canonical for ordering/requirements where applicable.
+  - Services validate that feature builders produce the expected names (and fail loudly if not).
+
+### Major accomplishments (high impact)
+- **End-to-end inference integrity**:
+  - Eliminated silent fallbacks/feature mappers; inference now follows:
+    `raw input → training/<model>/features.py → canonical feature list → model.predict → JSON response`.
+- **Regime endpoint stabilized**:
+  - Fixed missing-feature errors by aligning inference features to the canonical training feature list and ensuring consistent naming/ordering.
+- **Prophet endpoint rebuilt from scratch and made robust**:
+  - Uses the trained `prophet_forecast.pkl` artifact from `models/latest`.
+  - Uses `training/prophet_forecast/features.py::build_features_for_inference` to generate regressors.
+  - Accepts `periods` + user-supplied OHLCV history via the frontend.
+- **Frontend forecast UX fixed**:
+  - The forecast page now requests both `periods` and per-day OHLCV history in the correct API shape.
+  - Removed duplicate “periods” inputs and corrected the request payload to match backend schema expectations.
+- **Operational alerting added**:
+  - Added a simple Discord webhook alert module (`app/core/alerting.py`) and integrated it into at least one endpoint to notify on failures.
+- **Backend dockerized**:
+  - Added Dockerfile / compose for `mlops-project` so the backend can run containerized (frontend intentionally excluded).
+
 ---
 
 ## Hurdles encountered and resolutions
 
-1. Module import errors when running `app/main.py` directly (ModuleNotFoundError: No module named 'app'):
-   - Resolution: prepended the project package root (mlops-project) to `sys.path` early in `app/main.py`. Also added `app/__init__.py` and test conftests.
+This section lists the **actual issues encountered** and what was done to fix them, from most foundational to most application-specific.
 
-2. Deprecation warning with `@app.on_event("startup")`:
-   - Resolution: replaced with FastAPI lifespan handler using asynccontextmanager.
+### 1) Feature mismatch / missing features at inference (core ML serving issue)
+**Symptom(s):**
+- Runtime errors like:
+  - `Feature builder did not produce required features: missing [...]`
+- Models expecting a fixed feature set from training, while inference was producing a smaller/different set.
 
-3. Router naming collision: a router named `return.py` caused naming issues because `return` is a Python keyword.
-   - Resolution: exposed the router as `return_router` in `app.routers.__init__` and used that name in main.
+**Root cause:**
+- Training feature engineering produced a canonical set (names + order), but inference was not strictly reproducing it.
 
-4. Duplicate /predict root appearing in docs because some router defined a root (`"/"`) and was mounted at prefix `/predict`:
-   - Resolution: made routers use explicit subpaths (e.g., `/direction`, `/volatility`, `/regime`) and added logic to remove accidental `/predict` route entries if present.
+**Fix(es):**
+- Ensured each model’s service calls its own `training/<model>/features.py` inference helper.
+- Enforced canonical ordering using `training/<model>/metrics/latest/training_features.json` and/or model-saved feature names.
+- For regime/HMM: ensured builder returns a dict containing the canonical feature names required by the model pipeline (and fails loudly if not).
 
-5. Models failing due to mismatched feature shapes during inference (e.g., LightGBM expecting N features, got M):
-   - Resolution: Introduced temporary deterministic stubs and heuristic fallbacks for endpoints to keep the API usable locally until a canonical feature-mapping layer is implemented.
+**Outcome:**
+- All prediction endpoints now work reliably with correct feature vectors.
 
-6. Prophet forecasting failing when regressors are missing in future dataframe:
-   - Resolution: Implemented auto-fill logic in the Prophet service to fill future regressor columns with last-known values or defaults.
+### 2) “Global feature mapper” misuse / import failures
+**Symptom(s):**
+- Backend failed to boot due to router imports referencing a removed/shared feature mapper:
+  - `ModuleNotFoundError: No module named 'app.services.feature_mapper'`
 
-7. Prefect local import collision with installed `prefect.tasks` package:
-   - Resolution: used a robust fallback that dynamically loads `prefect/tasks/download_data.py` via importlib when package-relative import fails.
+**Root cause:**
+- A shared feature-mapper module was referenced by routers (e.g., health) even after the architecture moved to model-local feature builders.
 
-8. Tests failing initially due to missing sys.path entries during pytest collection:
-   - Resolution: added `app/tests/conftest.py` and root-level `conftest.py` to insert repo root into `sys.path` before test imports, and added `app/__init__.py`.
+**Fix(es):**
+- Removed dependency on the shared mapper from health (and any other routers) and read canonical features directly from training metrics.
+
+**Outcome:**
+- Clean boot, no hidden fallback layer.
+
+### 3) Prophet endpoint regressors: “history missing required regressor columns”
+**Symptom(s):**
+- Forecast endpoint failed with messages like:
+  - `history is missing required regressor columns: ['volume', 'high_low_spread', 'open_close_spread']`
+
+**Root cause:**
+- Prophet was trained with regressors and requires them in the future dataframe.
+- Frontend supplied OHLCV, while backend was initially expecting explicit regressor columns.
+
+**Fix(es):**
+- Added/used `training/prophet_forecast/features.py::build_features_for_inference` to:
+  - normalize OHLCV naming,
+  - compute regressors from OHLCV,
+  - normalize them exactly as training (rolling z-score),
+  - output canonical regressors defined in `training_features.json`.
+
+**Outcome:**
+- Forecast endpoint accepts OHLCV history and generates valid future regressors automatically.
+
+### 4) Prophet history parsing: DataFrame columns became `[0,1,2,3,4,5]`
+**Symptom(s):**
+- Errors indicating missing columns, but “available columns after normalization” were numeric indices:
+  - `Available columns after normalization: [0, 1, 2, 3, 4, 5]`
+
+**Root cause:**
+- History payload was being converted into a DataFrame incorrectly (list-like structures / Pydantic objects not converted to dicts).
+- Column normalization logic assumed string column labels.
+
+**Fix(es):**
+- Ensured routers convert `req.history` to list-of-dicts before passing to services.
+- Updated normalization loops to use `str(c).lower()` to avoid `'int' object has no attribute 'lower'`.
+
+**Outcome:**
+- Prophet history now reliably parses and normalizes.
+
+### 5) Prophet date generation failure: “Neither start nor end can be NaT”
+**Symptom(s):**
+- `pd.date_range()` crashed with NaT start.
+
+**Root cause:**
+- `ds` parsing resulted in NaT (invalid/missing dates), and start date computation didn’t validate.
+
+**Fix(es):**
+- Added robust date handling: coerce ds, drop NaT, fallback to `now()+1 day` if necessary.
+
+**Outcome:**
+- Forecast generation stable even with partial/dirty ds input.
+
+### 6) Forecast returning zeros / suspicion of “fake predictions”
+**Symptom(s):**
+- Forecast response `yhat/yhat_lower/yhat_upper` appeared as zeros in early iterations.
+
+**Root cause:**
+- Mismatch between trained-space (log y vs price y) and/or malformed regressor inputs resulting in meaningless predictions.
+- Inconsistent request format and history handling while rebuilding endpoint pipeline.
+
+**Fix(es):**
+- Rebuilt endpoint to strictly:
+  - load the trained artifact from `models/latest`,
+  - compute regressors from training inference helper,
+  - build future dataframe with required regressors,
+  - run model.predict and return results.
+
+**Outcome:**
+- Forecast endpoint now uses the trained model artifact and real computed regressors.
+
+### 7) Frontend mismatch with backend schema (forecast UX)
+**Symptom(s):**
+- Frontend only asked for `periods`, but backend required `history` (regressors derivation).
+- Duplicate “days” fields caused user confusion.
+
+**Fix(es):**
+- Rebuilt the forecast page UX to collect per-day OHLCV history rows + periods and submit correct JSON:
+  `{ periods: int, history: [{date/open/high/low/close/volume}, ...] }`
+- Removed the extra periods input in `pages/forecast.js` so the form is single-source-of-truth.
+
+**Outcome:**
+- Forecast page matches API contract and works end-to-end.
+
+### 8) Basic operationalization: Docker + alerting
+**Fix(es):**
+- Added backend Docker support for repeatable API runs (frontend excluded as requested).
+- Added Discord webhook alerting helper and integrated into at least one endpoint for failure notifications.
+
+**Outcome:**
+- More production-ready: containerizable backend + simple alerting.
 
 ---
 

@@ -1,3 +1,6 @@
+import os
+import sys
+import traceback
 from pathlib import Path
 import json
 import shutil
@@ -10,6 +13,22 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from features import prepare_features
 import pandas as pd
+
+# --- best-effort Discord alerting ---
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from app.core.alerting import send_discord_alert
+except Exception:
+    def send_discord_alert(message: str, **kwargs):  # type: ignore
+        return False
+
+def _alert_train_failure(tag: str, exc: Exception) -> None:
+    try:
+        send_discord_alert(f"[train][{tag}] FAILED: {exc}\n{traceback.format_exc()[:1500]}")
+    except Exception:
+        pass
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = REPO_ROOT / "models"
@@ -162,11 +181,15 @@ def train(n_components: int = 3, covariance_type: str = "full", random_state: in
 	return metrics
 
 if __name__ == "__main__":
-	import argparse
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--n_components", type=int, default=3)
-	parser.add_argument("--covariance_type", type=str, default="full")
-	parser.add_argument("--seed", type=int, default=42)
-	args = parser.parse_args()
-	res = train(n_components=args.n_components, covariance_type=args.covariance_type, random_state=args.seed)
-	print("Training metrics:", res)
+    try:
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--n_components", type=int, default=3)
+        parser.add_argument("--covariance_type", type=str, default="full")
+        parser.add_argument("--seed", type=int, default=42)
+        args = parser.parse_args()
+        res = train(n_components=args.n_components, covariance_type=args.covariance_type, random_state=args.seed)
+        print("Training metrics:", res)
+    except Exception as e:
+        _alert_train_failure("market_regime_hmm", e)
+        raise

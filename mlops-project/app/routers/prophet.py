@@ -3,6 +3,7 @@ from typing import Optional
 from app.schemas.ohlcv import ProphetRequest
 from app.schemas.prediction import ProphetResponse
 from app.services import prophet_service
+from app.core.alerting import send_discord_alert
 
 router = APIRouter()
 
@@ -16,4 +17,5 @@ def forecast_price(req: ProphetRequest):
         rows = prophet_service.forecast_prophet(periods=req.periods, history=history)
         return {"model": "prophet_forecast", "forecast": rows}
     except Exception as e:
+        send_discord_alert(f"[API] /forecast/price failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
