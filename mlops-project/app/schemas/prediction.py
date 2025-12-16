@@ -24,6 +24,7 @@ class DirectionResponse(BaseModel):
 class VolatilityResponse(BaseModel):
     model: str
     predicted_volatility: float
+    volatility: Optional[float] = None
 
 class ProphetPoint(BaseModel):
     date: str

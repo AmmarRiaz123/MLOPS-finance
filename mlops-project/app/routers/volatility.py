@@ -9,6 +9,7 @@ router = APIRouter()
 def predict_volatility(req: OHLCVInput):
     try:
         val = predict_volatility_from_ohlcv(req.dict(), model_key="lightgbm_volatility_model")
-        return {"model": "lightgbm_volatility_model", "predicted_volatility": val}
+        # return both fields for compatibility with frontend and schema
+        return {"model": "lightgbm_volatility_model", "predicted_volatility": val, "volatility": val}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

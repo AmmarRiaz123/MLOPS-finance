@@ -27,25 +27,10 @@
       "static/chunks/main.js",
       "static/chunks/pages/_error.js"
     ],
-    "/direction": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/direction.js"
-    ],
     "/forecast": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
       "static/chunks/pages/forecast.js"
-    ],
-    "/regime": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/regime.js"
-    ],
-    "/return": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/return.js"
     ],
     "/volatility": [
       "static/chunks/webpack.js",
