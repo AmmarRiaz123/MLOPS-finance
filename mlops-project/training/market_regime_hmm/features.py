@@ -147,3 +147,115 @@ def prepare_features(window_vol_short: int = 5,
 
 	# align & return
 	return X, returns, vol_series, dates, scaler
+
+def build_features_for_inference(returns_window=None, volatility_window=None, history=None, ohlcv=None):
+    """
+    Build features for regime inference.
+    Accepts either:
+      - returns_window: list[float] and volatility_window: list[float] (preferred), OR
+      - history: list[dict] of OHLCV rows (oldest->newest), OR
+      - ohlcv: single OHLCV dict
+    Returns dict mapped to canonical training feature names (missing -> 0.0).
+    """
+    import numpy as _np
+    import pandas as _pd
+    from pathlib import Path as _Path
+    import json as _json
+
+    # 1) compute base features from windows if provided
+    out_partial = {}
+    if returns_window is not None or volatility_window is not None:
+        rw = _np.array(returns_window[-50:]) if returns_window else _np.array([0.0])
+        vw = _np.array(volatility_window[-50:]) if volatility_window else _np.array([0.0])
+
+        def _safe(arr, n):
+            return arr[-n:] if arr.size>0 else _np.array([0.0])
+
+        out_partial["log_return"] = float(rw[-1]) if rw.size>0 else 0.0
+        out_partial["std5"] = float(_np.std(_safe(rw,5)))
+        out_partial["std10"] = float(_np.std(_safe(rw,10)))
+        out_partial["ret_mean_3"] = float(_np.mean(_safe(rw,3)))
+        out_partial["ret_std_3"] = float(_np.std(_safe(rw,3)))
+        out_partial["momentum_8"] = float(rw[-1] - _np.mean(_safe(rw,8))) if rw.size>0 else 0.0
+        out_partial["vol_ma5"] = float(_np.mean(_safe(vw,5)))
+        out_partial["vol_ma10"] = float(_np.mean(_safe(vw,10)))
+    else:
+        # build from history/ohlcv if windows not provided
+        df = None
+        if isinstance(history, list) and history:
+            df = _pd.DataFrame(history).copy()
+        elif ohlcv:
+            df = _pd.DataFrame([ohlcv]).copy()
+
+        if df is None or df.empty:
+            raise RuntimeError("Provide returns_window/volatility_window or history/ohlcv for regime inference")
+
+        # normalize column names
+        col_map = {"open":"Open","high":"High","low":"Low","close":"Close","volume":"Volume","ds":"Date","date":"Date","timestamp":"Date"}
+        rename = {c:col_map.get(c.lower(),c) for c in df.columns}
+        df = df.rename(columns=rename)
+        # ensure Close numeric
+        if "Close" not in df.columns:
+            if "Adj Close" in df.columns:
+                df["Close"] = df["Adj Close"]
+            else:
+                raise RuntimeError("history/ohlcv must include 'close' field")
+        df["Close"] = _pd.to_numeric(df["Close"], errors="coerce")
+        df["daily_return"] = df["Close"].pct_change().fillna(0.0)
+        rw = df["daily_return"].values
+        vw = (df["Volume"].fillna(0).values if "Volume" in df.columns else _np.array([0.0]))
+
+        def _safe2(arr,n):
+            return arr[-n:] if arr.size>0 else _np.array([0.0])
+
+        out_partial["log_return"] = float(rw[-1]) if rw.size>0 else 0.0
+        out_partial["std5"] = float(_np.std(_safe2(rw,5)))
+        out_partial["std10"] = float(_np.std(_safe2(rw,10)))
+        out_partial["ret_mean_3"] = float(_np.mean(_safe2(rw,3)))
+        out_partial["ret_std_3"] = float(_np.std(_safe2(rw,3)))
+        out_partial["momentum_8"] = float(rw[-1] - _np.mean(_safe2(rw,8))) if rw.size>0 else 0.0
+        out_partial["vol_ma5"] = float(_np.mean(_safe2(vw,5)))
+        out_partial["vol_ma10"] = float(_np.mean(_safe2(vw,10)))
+
+    # 2) load canonical feature list saved at training time
+    repo_root = _Path(__file__).resolve().parents[2]
+    metrics_file = _Path(__file__).resolve().parent / "metrics" / "latest" / "training_features.json"
+    model_features_file = repo_root / "models" / "latest" / "feature_names.json"
+    canonical = None
+    try:
+        if metrics_file.exists():
+            with open(metrics_file, "r") as f:
+                canonical = _json.load(f).get("features") or _json.load(open(metrics_file)).get("feature_names")
+        elif model_features_file.exists():
+            with open(model_features_file, "r") as f:
+                canonical = _json.load(f)
+    except Exception:
+        canonical = None
+
+    if not isinstance(canonical, list) or not canonical:
+        # fallback: pick a reasonable superset used by training
+        canonical = ["log_return","std5","std10","ret_mean_3","ret_std_3","momentum_8","vol_ma5","vol_ma10"]
+        # extend with plausible additional names that training may expect
+        extras = ["ret_mean_5","ret_std_5","ma5","ma10","ma20","high_low_spread","open_close_spread","vol_x_std5","vol_x_mom8","rsi_14","macd","macd_signal","stoch_k","stoch_d"]
+        for e in extras:
+            if e not in canonical:
+                canonical.append(e)
+
+    # 3) build final dict aligned to canonical list, fill missing with 0.0
+    final = {}
+    for feat in canonical:
+        if feat in out_partial:
+            val = out_partial[feat]
+        else:
+            # try common aliases
+            alias = feat.replace("ma","ma_") if feat.startswith("ma") and feat[2].isdigit() else feat
+            val = out_partial.get(alias, 0.0)
+        try:
+            final[feat] = float(val) if not (_pd.isna(val) if 'pd' in globals() else False) else 0.0
+        except Exception:
+            try:
+                final[feat] = float(val)
+            except Exception:
+                final[feat] = 0.0
+
+    return final

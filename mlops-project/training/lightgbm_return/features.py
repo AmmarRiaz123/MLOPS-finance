@@ -209,12 +209,35 @@ def build_features_for_inference(history=None, ohlcv=None):
     else:
         raise RuntimeError("Either history or ohlcv must be provided for inference.")
 
+    # --- Normalise column names from API (lowercase keys) to training column names (Title case) ---
+    col_map = {
+        "open": "Open", "high": "High", "low": "Low",
+        "close": "Close", "adj close": "Adj Close", "adj_close": "Adj Close",
+        "volume": "Volume", "vol": "Volume",
+        "date": "Date", "ds": "Date", "timestamp": "Date"
+    }
+    renamed = {}
+    for c in df.columns:
+        key = str(c).lower()
+        mapped = col_map.get(key, None)
+        if mapped:
+            renamed[c] = mapped
+    if renamed:
+        df = df.rename(columns=renamed)
+
     # ensure date idx if present
     for c in ['Date','date','ds','timestamp']:
-        if c in df.columns:
-            df[c] = _pd.to_datetime(df[c], errors='coerce')
-            df = df.sort_values(c).reset_index(drop=True)
+        if c in df.columns or (c == 'Date' and 'Date' in df.columns):
+            try:
+                df['Date'] = _pd.to_datetime(df.get('Date') or df.get(c), errors='coerce')
+                df = df.sort_values('Date').reset_index(drop=True)
+            except Exception:
+                pass
             break
+
+    # Validate required column presence early and give a clear error
+    if 'Close' not in df.columns:
+        raise RuntimeError(f"Feature builder requires column 'Close' (case-sensitive). Available columns: {list(df.columns)}. Provide OHLCV fields as keys 'open','high','low','close','volume' or column names matching training CSV.")
 
     # coerce numeric columns used by prepare_features
     for c in ['Open','High','Low','Close','Adj Close','Volume']:
@@ -269,5 +292,15 @@ def build_features_for_inference(history=None, ohlcv=None):
     return feat_dict
 
 if __name__ == "__main__":
-    X, y, dates = prepare_features()
-    print(f"Prepared features: X.shape={X.shape}, y.shape={y.shape}")
+    res = prepare_features()
+    # handle both signatures: (X, y, dates) or (X, y, dates, scaler)
+    if isinstance(res, tuple):
+        if len(res) == 4:
+            X, y, dates, _scaler = res
+        elif len(res) == 3:
+            X, y, dates = res
+        else:
+            raise RuntimeError(f"prepare_features returned unexpected tuple length: {len(res)}")
+    else:
+        raise RuntimeError("prepare_features did not return a tuple as expected")
+    print(f"Prepared features: X.shape={getattr(X, 'shape', None)}, y.shape={getattr(y, 'shape', None)}")

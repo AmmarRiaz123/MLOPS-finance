@@ -177,3 +177,148 @@ def prepare_features(horizon: int = 1,
         return X, y, dates, scaler
 
     return X, y, dates
+
+def build_features_for_inference(history=None, ohlcv=None):
+	"""
+	Build features for a single inference row using the same training feature code.
+	- history: optional list[dict] ordered oldest->newest
+	- ohlcv: optional single dict with keys like open/high/low/close/volume (case-insensitive)
+	Returns: dict {feature_name: float} for the most recent row produced by the same transforms used in training.
+	"""
+	import pandas as _pd
+	import numpy as _np
+
+	# create DF from history or single ohlcv
+	if history:
+		df = _pd.DataFrame(history).copy()
+	elif ohlcv:
+		df = _pd.DataFrame([ohlcv]).copy()
+	else:
+		raise RuntimeError("Either 'history' (list of rows) or 'ohlcv' (single row) must be provided for inference.")
+
+	# normalize incoming keys -> training column names
+	col_map = {
+		"open": "Open", "high": "High", "low": "Low",
+		"close": "Close", "adj close": "Adj Close", "adj_close": "Adj Close",
+		"volume": "Volume", "vol": "Volume",
+		"date": "Date", "ds": "Date", "timestamp": "Date"
+	}
+	rename = {}
+	for c in list(df.columns):
+		key = str(c).lower()
+		mapped = col_map.get(key)
+		if mapped:
+			rename[c] = mapped
+	if rename:
+		df = df.rename(columns=rename)
+
+	# ensure numeric types and presence of Close
+	for c in ['Open','High','Low','Close','Adj Close','Volume']:
+		if c in df.columns:
+			df[c] = _pd.to_numeric(df[c], errors='coerce')
+	if 'Close' not in df.columns:
+		if 'Adj Close' in df.columns:
+			df['Close'] = df['Adj Close']
+		else:
+			raise RuntimeError(f"Feature builder requires 'Close' column. Available columns: {list(df.columns)}")
+
+	# handle date column if present for ordering
+	if 'Date' in df.columns:
+		try:
+			df['Date'] = _pd.to_datetime(df['Date'], errors='coerce')
+			df = df.sort_values('Date').reset_index(drop=True)
+		except Exception:
+			df = df.reset_index(drop=True)
+	else:
+		df = df.reset_index(drop=True)
+
+	# replicate key transforms used in prepare_features
+	df['return'] = df['Close'].pct_change()
+	df['log_return'] = _np.log(df['Close']).diff()
+
+	# lagged returns
+	df['return_lag1'] = df['return'].shift(1)
+	df['return_lag2'] = df['return'].shift(2)
+	df['return_lag3'] = df['return'].shift(3)
+	df['return_lag5'] = df['return'].shift(5)
+	df['return_lag10'] = df['return'].shift(10)
+
+	# moving averages
+	df['ma5'] = df['Close'].rolling(5).mean()
+	df['ma10'] = df['Close'].rolling(10).mean()
+	df['ma20'] = df['Close'].rolling(20).mean()
+
+	# rolling stds
+	df['std5'] = df['return'].rolling(5).std()
+	df['std10'] = df['return'].rolling(10).std()
+	df['std20'] = df['return'].rolling(20).std()
+
+	# ewma/momentum
+	df['ewma_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+	df['momentum_8'] = (df['Close'] - df['ewma_8']) / df['ewma_8'].replace(0, _np.nan)
+	df['momentum_8'] = df['momentum_8'].fillna(0)
+
+	# volume features
+	if 'Volume' in df.columns:
+		df['volume'] = df['Volume'].fillna(0)
+		df['vol_ma5'] = df['volume'].rolling(5).mean().fillna(0)
+		df['vol_ma10'] = df['volume'].rolling(10).mean().fillna(0)
+	else:
+		df['volume'] = 0.0
+		df['vol_ma5'] = 0.0
+		df['vol_ma10'] = 0.0
+
+	# spreads
+	if {'High','Low'}.issubset(df.columns):
+		df['high_low_spread'] = (df['High'] - df['Low']) / df['Close']
+	else:
+		df['high_low_spread'] = 0.0
+	if {'Open','Close'}.issubset(df.columns):
+		df['open_close_spread'] = (df['Close'] - df['Open']) / df['Open'].replace(0, _np.nan)
+	else:
+		df['open_close_spread'] = 0.0
+
+	# interaction
+	df['vol_x_std5'] = df['vol_ma5'].fillna(0) * df['std5'].fillna(0)
+
+	# RSI 14
+	delta = df['Close'].diff()
+	gain = delta.clip(lower=0)
+	loss = -delta.clip(upper=0)
+	roll_up = gain.rolling(14).mean()
+	roll_down = loss.rolling(14).mean()
+	rs = roll_up / roll_down.replace(0, _np.nan)
+	df['rsi_14'] = (100 - (100 / (1 + rs))).fillna(50) / 100.0
+
+	# MACD
+	ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+	ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+	df['macd'] = (ema12 - ema26).fillna(0)
+	df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean().fillna(0)
+
+	# Stochastic %K/%D
+	low_min = df['Low'].rolling(14).min() if 'Low' in df.columns else df['Close'].rolling(14).min()
+	high_max = df['High'].rolling(14).max() if 'High' in df.columns else df['Close'].rolling(14).max()
+	stoch_k = ((df['Close'] - low_min) / (high_max - low_min).replace(0, _np.nan)).fillna(0)
+	df['stoch_k'] = stoch_k
+	df['stoch_d'] = df['stoch_k'].rolling(3).mean().fillna(0)
+
+	# canonical feature list used in training (same as default_features in prepare_features)
+	canonical = [
+		'return_lag1','return_lag2','return_lag3','return_lag5','return_lag10',
+		'ma5','ma10','ma20','std5','std10','std20',
+		'momentum_8','vol_ma5','vol_ma10','high_low_spread','open_close_spread','vol_x_std5',
+		'rsi_14','macd','macd_signal','stoch_k','stoch_d'
+	]
+
+	# take last row
+	last = df.iloc[-1]
+	out = {}
+	for f in canonical:
+		val = last.get(f, None)
+		try:
+			out[f] = float(val) if not _pd.isna(val) else 0.0
+		except Exception:
+			out[f] = 0.0
+
+	return out

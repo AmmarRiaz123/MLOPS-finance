@@ -1,40 +1,96 @@
-from typing import Dict, Any
+from pathlib import Path
+import importlib.util
+import json
+from typing import Dict, Any, Optional
 import numpy as np
+import joblib
 
-from app.core.model_loader import MODEL_REGISTRY
-from app.services.common import unwrap_model
-from app.services.feature_mapper import get_training_features_for_model, build_feature_vector
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-def predict_direction_from_ohlcv(payload: Dict[str, Any], model_key: str = "lightgbm_up_down_model") -> Dict[str, Any]:
-    model_obj = MODEL_REGISTRY.get(model_key)
-    if model_obj is None:
-        raise RuntimeError(f"Model '{model_key}' not loaded")
-    model, scaler, saved_features = unwrap_model(model_obj)
-    feature_names = saved_features or get_training_features_for_model(model_key)
-    if not feature_names:
-        raise RuntimeError(f"No feature names available for model '{model_key}'")
+def _load_training_module(folder: str):
+    path = REPO_ROOT / "training" / folder / "features.py"
+    if not path.exists():
+        raise RuntimeError(f"Training features.py not found for {folder} at {path}")
+    spec = importlib.util.spec_from_file_location(f"training.{folder}.features", str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
-    fv = build_feature_vector(model_key, history=payload.get("history"), ohlcv=payload)
-    X_row = [float(fv.get(n, 0.0)) for n in feature_names]
+def _load_training_features_list(folder: str):
+    tf = REPO_ROOT / "training" / folder / "metrics" / "latest" / "training_features.json"
+    if not tf.exists():
+        raise RuntimeError(f"training_features.json not found for {folder}. Re-run training to generate: {tf}")
+    with open(tf, "r") as f:
+        data = json.load(f)
+    feats = data.get("features") or data.get("feature_names")
+    if not isinstance(feats, list) or not feats:
+        raise RuntimeError(f"Invalid training_features.json for {folder}: {tf}")
+    return feats
+
+def _load_model_file(model_filename: str):
+    model_path = REPO_ROOT / "models" / "latest" / model_filename
+    if not model_path.exists():
+        raise RuntimeError(f"Model file not found: {model_path}")
+    obj = joblib.load(model_path)
+    if isinstance(obj, dict) and "model" in obj:
+        return obj["model"]
+    return obj
+
+def predict_direction_from_ohlcv(payload: Dict[str, Any], model_key: str = "lightgbm_up_down_model") -> Dict[str, Optional[float]]:
+    """
+    Predict direction using model-local feature builder.
+    payload: OHLCV dict and optional 'history' list[dict].
+    """
+    if model_key != "lightgbm_up_down_model":
+        raise RuntimeError(f"Unsupported model_key: {model_key}")
+
+    training_folder = "lightgbm_up_down"
+    model_filename = "lightgbm_up_down_model.pkl"
+
+    feature_names = _load_training_features_list(training_folder)
+    mod = _load_training_module(training_folder)
+    builder = getattr(mod, "build_features_for_inference", None)
+    if not callable(builder):
+        raise RuntimeError(f"No inference helper (build_features_for_inference) in training/{training_folder}/features.py")
+
+    history = payload.get("history")
+    try:
+        feat_dict = builder(history=history, ohlcv=payload) if "history" in builder.__code__.co_varnames else builder(payload)
+    except Exception as e:
+        raise RuntimeError(f"Feature builder failed: {e}")
+
+    if not isinstance(feat_dict, dict):
+        raise RuntimeError("Feature builder must return a dict of feature_name -> numeric value")
+
+    missing = [f for f in feature_names if f not in feat_dict]
+    if missing:
+        raise RuntimeError(f"Feature builder did not produce required features: missing {missing}")
+
+    X_row = [float(feat_dict.get(f, 0.0)) for f in feature_names]
     X_np = np.array([X_row], dtype=float)
 
-    if scaler is not None:
-        X_np = scaler.transform(X_np)
+    model = _load_model_file(model_filename)
 
     try:
-        pred_label = model.predict(X_np)
+        pred = model.predict(X_np)
     except Exception as e:
-        raise RuntimeError(f"Model predict failed: {e}")
+        raise RuntimeError(f"Model prediction failed: {e}")
 
-    # probability if available
-    prob = None
+    label = pred[0]
+    probability = None
     try:
         if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(X_np)
-            # assume binary: take class probability for predicted class
-            cls_idx = int(pred_label[0])
-            prob = float(proba[0, cls_idx]) if proba.shape[1] > cls_idx else None
+            proba = model.predict_proba(X_np)[0]
+            classes = getattr(model, "classes_", None)
+            if classes is not None:
+                try:
+                    idx = list(classes).index(label)
+                    probability = float(proba[idx])
+                except Exception:
+                    probability = float(proba.max())
+            else:
+                probability = float(proba.max())
     except Exception:
-        prob = None
+        probability = None
 
-    return {"direction": str(pred_label[0]), "probability": prob}
+    return {"direction": str(label), "probability": probability}

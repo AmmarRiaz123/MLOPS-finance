@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import json
 
 def load_and_clean_data(csv_path):
     """Load CSV and clean for feature engineering."""
@@ -186,6 +187,97 @@ def prepare_ml_data(csv_path, horizon: int = 1, smooth_window: int | None = None
         return X_scaled, y_clean, scaler
 
     return X_clean, y_clean
+
+def build_features_for_inference(history=None, ohlcv=None):
+    """
+    Build features for a single inference row using the same training feature code.
+    - history: optional list[dict] ordered oldest->newest
+    - ohlcv: optional single dict with keys like open/high/low/close/volume (case-insensitive)
+    Returns: dict {feature_name: float} for the most recent row produced by generate_features.
+    """
+    import pandas as _pd
+    import numpy as _np
+    from pathlib import Path as _Path
+
+    # create DF from history or single ohlcv
+    if history:
+        df = _pd.DataFrame(history).copy()
+    elif ohlcv:
+        df = _pd.DataFrame([ohlcv]).copy()
+    else:
+        raise RuntimeError("Either 'history' (list of rows) or 'ohlcv' (single row) must be provided for inference.")
+
+    # normalize common incoming keys -> training column names
+    col_map = {
+        "open": "Open", "high": "High", "low": "Low",
+        "close": "Close", "adj close": "Adj_Close", "adj_close": "Adj_Close",
+        "volume": "Volume", "vol": "Volume",
+        "date": "Date", "ds": "Date", "timestamp": "Date"
+    }
+    rename = {}
+    for c in list(df.columns):
+        key = str(c).lower()
+        mapped = col_map.get(key)
+        if mapped:
+            rename[c] = mapped
+    if rename:
+        df = df.rename(columns=rename)
+
+    # ensure numeric types and presence of Close
+    for c in ['Open','High','Low','Close','Adj_Close','Volume']:
+        if c in df.columns:
+            df[c] = _pd.to_numeric(df[c], errors='coerce')
+    if 'Close' not in df.columns:
+        # try Adj_Close fallback
+        if 'Adj_Close' in df.columns:
+            df['Close'] = df['Adj_Close']
+        else:
+            raise RuntimeError(f"Feature builder requires 'Close' column. Available columns: {list(df.columns)}")
+
+    # handle date column if present for ordering
+    if 'Date' in df.columns:
+        try:
+            df['Date'] = _pd.to_datetime(df['Date'], errors='coerce')
+            df = df.sort_values('Date').reset_index(drop=True)
+        except Exception:
+            df = df.reset_index(drop=True)
+    else:
+        df = df.reset_index(drop=True)
+
+    # now call the existing feature generator
+    features_df = generate_features(df)
+
+    # --- ensure the returned dict contains all canonical training features ---
+    metrics_file = _Path(__file__).resolve().parent / "metrics" / "latest" / "training_features.json"
+    canonical = None
+    if metrics_file.exists():
+        try:
+            with open(metrics_file, "r") as _f:
+                _data = json.load(_f)
+            canonical = _data.get("features") or _data.get("feature_names")
+            if not isinstance(canonical, list):
+                canonical = None
+        except Exception:
+            canonical = None
+
+    # fallback to using features_df columns order when metrics file missing
+    if canonical is None:
+        canonical = [c for c in features_df.columns]
+
+    if features_df.empty:
+        raise RuntimeError("Feature generation produced no rows from provided history/ohlcv")
+
+    # select last row and build output dict aligned to canonical order
+    last = features_df.iloc[-1]
+    out = {}
+    for k in canonical:
+        try:
+            val = last.get(k, None)
+            out[k] = float(val) if not _pd.isna(val) else 0.0
+        except Exception:
+            out[k] = 0.0
+
+    return out
 
 if __name__ == "__main__":
     # Example usage

@@ -34,7 +34,23 @@ def _archive_if_exists(path: Path, archived_dir: Path, prefix: str):
         archived_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%dT%H%M%S")
         dest = archived_dir / f"{ts}_{prefix}"
-        shutil.move(str(path), str(dest))
+        try:
+            shutil.move(str(path), str(dest))
+            print(f"[train] archived {path} -> {dest}")
+        except PermissionError as pe:
+            # File locked by another process (e.g., API has it open). Fall back to copy.
+            try:
+                shutil.copy2(str(path), str(dest))
+                print(f"[train] move failed due to lock; copied to archive instead: {dest}")
+            except Exception as copy_err:
+                print(f"[train] failed to archive with copy fallback: {copy_err}")
+        except Exception as e:
+            # Generic fallback: attempt copy2, avoid deleting original on failure
+            try:
+                shutil.copy2(str(path), str(dest))
+                print(f"[train] archive moved failed ({e}); copied to archive: {dest}")
+            except Exception as copy_err:
+                print(f"[train] archive fallback failed: {copy_err}")
 
 def train(model_type: str = "rf",
           horizon: int = 1,
