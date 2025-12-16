@@ -237,6 +237,11 @@ This makes the `/forecast/price` endpoint robust and easy to call.
 
 Important: Do NOT run training inside the API container. Training is offline and invoked via the Prefect flow or separate training jobs.
 
+Each training script now saves a canonical feature-name list on successful completion:
+  - models/latest/feature_names.json
+  - training/<model>/metrics/latest/training_features.json
+If a model's feature list is not present, re-run its training script from the project root to generate the canonical files.
+
 ---
 
 ## How to run locally (developer quick-start)
@@ -245,6 +250,11 @@ Important: Do NOT run training inside the API container. Training is offline and
    - python -m venv venv
    - venv\Scripts\activate (Windows) or source venv/bin/activate
    - pip install -r requirements.txt (ensure packages: fastapi, uvicorn, pandas, prophet, lightgbm, scikit-learn, prefect, pytest, joblib, etc.)
+   
+   **Note on Prophet**: Prophet requires additional system dependencies (cmdstanpy). If installation fails:
+   - Windows: `conda install -c conda-forge prophet` (recommended)
+   - Or follow: https://facebook.github.io/prophet/docs/installation.html
+   - Without Prophet: forecasting endpoints will return installation error messages
 
 2. Start API locally:
    - From repo `mlops-project` directory:

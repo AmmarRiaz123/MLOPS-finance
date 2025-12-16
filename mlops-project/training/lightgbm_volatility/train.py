@@ -127,6 +127,27 @@ def train(random_seed: int = 42, test_size_ratio: float = 0.2, tune: bool = True
 		json.dump(metrics, f, indent=2)
 	print(f"[train] saved metrics: {METRICS_LATEST.resolve()}")
 
+	# --- Save canonical feature names with the model and under training metrics ---
+	try:
+		feature_names = X.columns.tolist()
+		# save next to model for quick lookup by inference code
+		features_file = LATEST_MODEL_PATH.parent / "feature_names.json"
+		with open(features_file, "w") as _f:
+			json.dump(feature_names, _f, indent=2)
+		print(f"[train] saved feature names: {features_file.resolve()}")
+
+		# also persist into training metrics directory for discoverability
+		# METRICS_LATEST is the metrics JSON file path; use its parent directory for files
+		metrics_dir = METRICS_LATEST.parent
+		metrics_dir.mkdir(parents=True, exist_ok=True)
+		metrics_features_file = metrics_dir / "training_features.json"
+
+		with open(metrics_features_file, "w") as _mf:
+			json.dump({"features": feature_names}, _mf, indent=2)
+		print(f"[train] saved training features metadata: {metrics_features_file.resolve()}")
+	except Exception as _fe_err:
+		print(f"[train] failed to save feature names: {_fe_err}")
+
 	return {"model_path": str(LATEST_MODEL_PATH), "metrics_path": str(METRICS_LATEST), "val_rmse": rmse}
 
 if __name__ == "__main__":

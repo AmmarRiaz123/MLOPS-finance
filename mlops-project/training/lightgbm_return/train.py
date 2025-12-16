@@ -222,6 +222,24 @@ def train(random_seed: int = 42,
     joblib.dump(model, LATEST_MODEL_PATH)
     print(f"[train] saved model (booster): {LATEST_MODEL_PATH.resolve()}")
 
+    # --- Save canonical feature names with the model and under training metrics ---
+    try:
+        feature_names = X.columns.tolist()
+        # save next to model for quick lookup by inference code
+        features_file = LATEST_MODEL_DIR / "feature_names.json"
+        with open(features_file, "w") as _f:
+            json.dump(feature_names, _f, indent=2)
+        print(f"[train] saved feature names: {features_file.resolve()}")
+
+        # also persist into training metrics directory for discoverability
+        METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
+        metrics_features_file = METRICS_LATEST_DIR / "training_features.json"
+        with open(metrics_features_file, "w") as _mf:
+            json.dump({"features": feature_names}, _mf, indent=2)
+        print(f"[train] saved training features metadata: {metrics_features_file.resolve()}")
+    except Exception as _fe_err:
+        print(f"[train] failed to save feature names: {_fe_err}")
+
     # feature importance from booster
     try:
         feat_names = X.columns.tolist()

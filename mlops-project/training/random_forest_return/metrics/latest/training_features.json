@@ -1,0 +1,26 @@
+{
+  "features": [
+    "return_lag1",
+    "return_lag2",
+    "return_lag3",
+    "return_lag5",
+    "return_lag10",
+    "ma5",
+    "ma10",
+    "ma20",
+    "std5",
+    "std10",
+    "std20",
+    "momentum_8",
+    "vol_ma5",
+    "vol_ma10",
+    "high_low_spread",
+    "open_close_spread",
+    "vol_x_std5",
+    "rsi_14",
+    "macd",
+    "macd_signal",
+    "stoch_k",
+    "stoch_d"
+  ]
+}

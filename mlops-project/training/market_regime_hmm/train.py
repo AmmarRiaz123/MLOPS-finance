@@ -97,6 +97,22 @@ def train(n_components: int = 3, covariance_type: str = "full", random_state: in
 	joblib.dump({"model": model, "scaler": scaler, "features": X.columns.tolist(), "backend": hmm_backend}, LATEST_MODEL_PATH)
 	log.info(f"Saved HMM model: {LATEST_MODEL_PATH.resolve()}")
 
+	# --- Save canonical feature names next to model and into training metrics ---
+	try:
+		feature_names = list(X.columns)
+		# model dir feature list
+		features_file = LATEST_MODEL_PATH.parent / "feature_names.json"
+		with open(features_file, "w") as _f:
+			json.dump(feature_names, _f, indent=2)
+		# training metrics feature list
+		METRICS_LATEST.parent.mkdir(parents=True, exist_ok=True)
+		training_features_file = METRICS_LATEST.parent / "training_features.json"
+		with open(training_features_file, "w") as _tf:
+			json.dump({"features": feature_names}, _tf, indent=2)
+		log.info(f"Saved training feature names: {training_features_file.resolve()}")
+	except Exception as _e:
+		log.warning(f"Failed to persist feature names: {_e}")
+
 	# ensure metrics dir
 	_archive_if_exists(METRICS_LATEST, METRICS_ARCHIVED, "metrics.json")
 	METRICS_LATEST.parent.mkdir(parents=True, exist_ok=True)

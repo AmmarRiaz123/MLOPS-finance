@@ -192,6 +192,82 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
         return X, y, dates, scaler
     return X, y, dates
 
+def build_features_for_inference(history=None, ohlcv=None):
+    """
+    history: optional list[dict] with recent rows (same columns as training CSV) ordered oldest->newest
+    ohlcv: optional single OHLCV dict to use as the most recent row
+    Returns: dict {feature_name: float} aligned to candidate_features / training_features.json
+    """
+    import pandas as _pd
+    import numpy as _np
+
+    # Build a small dataframe using history if provided, else fall back to single-row from ohlcv
+    if history:
+        df = _pd.DataFrame(history).copy()
+    elif ohlcv:
+        df = _pd.DataFrame([ohlcv]).copy()
+    else:
+        raise RuntimeError("Either history or ohlcv must be provided for inference.")
+
+    # ensure date idx if present
+    for c in ['Date','date','ds','timestamp']:
+        if c in df.columns:
+            df[c] = _pd.to_datetime(df[c], errors='coerce')
+            df = df.sort_values(c).reset_index(drop=True)
+            break
+
+    # coerce numeric columns used by prepare_features
+    for c in ['Open','High','Low','Close','Adj Close','Volume']:
+        if c in df.columns:
+            df[c] = _pd.to_numeric(df[c], errors='coerce')
+
+    # replicate minimal transforms used in prepare_features to create needed features
+    df['daily_return'] = df['Close'].pct_change()
+    df['ret_3'] = df['Close'].pct_change(periods=3)
+    df['ret_5'] = df['Close'].pct_change(periods=5)
+    df['ret_10'] = df['Close'].pct_change(periods=10)
+    for w in (3,5,10):
+        df[f'ret_mean_{w}'] = df['daily_return'].rolling(w, min_periods=1).mean()
+        df[f'ret_std_{w}']  = df['daily_return'].rolling(w, min_periods=1).std().fillna(0)
+    if 'std5' not in df.columns:
+        df['std5'] = df['daily_return'].rolling(5, min_periods=1).std().fillna(0)
+    df['return_lag1'] = df['daily_return'].shift(1)
+    df['return_lag2'] = df['daily_return'].shift(2)
+    df['ewma_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+    df['momentum_8'] = (df['Close'] - df['ewma_8']) / df['ewma_8'].replace(0, _np.nan)
+    df['momentum_8'] = df['momentum_8'].fillna(0)
+    if 'Volume' in df.columns:
+        df['vol_ma5'] = df['Volume'].rolling(5).mean().fillna(0)
+    else:
+        df['vol_ma5'] = 0.0
+    df['high_low_spread'] = ((df.get('High', df['Close']) - df.get('Low', df['Close'])) / df['Close']).fillna(0)
+    df['vol_x_std5'] = df['vol_ma5'] * df['std5'].fillna(0)
+    delta = df['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    roll_up = gain.rolling(14, min_periods=1).mean()
+    roll_down = loss.rolling(14, min_periods=1).mean()
+    rs = roll_up / roll_down.replace(0, _np.nan)
+    df['rsi_14'] = (100 - (100 / (1 + rs))).fillna(50) / 100.0
+
+    # candidate features (same order as training)
+    candidate_features = [
+        'return_lag1','return_lag2',
+        'ret_3','ret_5','ret_10',
+        'ret_mean_5','ret_std_5',
+        'momentum_8','rsi_14',
+        'vol_ma5','high_low_spread','vol_x_std5'
+    ]
+
+    # take last row as inference input
+    last = df.iloc[-1]
+    feat_dict = {}
+    for f in candidate_features:
+        val = last.get(f, None)
+        feat_dict[f] = float(val) if _pd.notna(val) else 0.0
+
+    return feat_dict
+
 if __name__ == "__main__":
     X, y, dates = prepare_features()
     print(f"Prepared features: X.shape={X.shape}, y.shape={y.shape}")

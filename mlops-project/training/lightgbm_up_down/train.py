@@ -92,6 +92,17 @@ def save_model_and_info(model, model_filename, feature_names, train_info):
     with open(features_path, 'w') as f:
         json.dump(list(feature_names), f, indent=2)
 
+    # Also persist feature names into training metrics for discoverability
+    try:
+        metrics_latest_dir = metrics_root / "latest"
+        metrics_latest_dir.mkdir(parents=True, exist_ok=True)
+        training_features_file = metrics_latest_dir / "training_features.json"
+        with open(training_features_file, 'w') as _tf:
+            json.dump({"features": list(feature_names)}, _tf, indent=2)
+    except Exception:
+        # non-fatal; proceed
+        pass
+
     # --- Metrics: maintain metrics/latest and metrics/archived ---
     metrics_latest_dir = metrics_root / "latest"
     metrics_archived_dir = metrics_root / "archived"

@@ -142,6 +142,17 @@ def train(model_type: str = "rf",
         json.dump(metrics, f, indent=2)
     logging.info(f"Saved metrics to {(METRICS_LATEST_DIR / 'metrics.json').resolve()}")
 
+    # persist canonical feature list for inference discovery
+    try:
+        METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
+        feature_names = X.columns.tolist()
+        features_file = METRICS_LATEST_DIR / "training_features.json"
+        with open(features_file, "w") as _f:
+            json.dump({"features": feature_names}, _f, indent=2)
+        logging.info(f"Saved training features: {features_file.resolve()}")
+    except Exception as _fe:
+        logging.warning(f"Failed to save training_features.json: {_fe}")
+
     return {"model_path": str(LATEST_MODEL_PATH), "metrics_path": str(METRICS_LATEST_DIR / "metrics.json"), "rmse": rmse, "mae": mae}
 
 if __name__ == "__main__":

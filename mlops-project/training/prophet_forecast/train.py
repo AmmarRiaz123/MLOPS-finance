@@ -173,6 +173,17 @@ def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]
         json.dump(metadata, f, indent=2)
     print(f"[train] saved training metadata: {(METRICS_LATEST_DIR / 'training_metadata.json').resolve()}")
 
+    # also persist list of regressors / feature names for discoverability
+    try:
+        METRICS_LATEST_DIR.mkdir(parents=True, exist_ok=True)
+        features_file = METRICS_LATEST_DIR / "training_features.json"
+        # regressors is a list captured earlier in training
+        with open(features_file, "w") as _f:
+            json.dump({"features": regressors}, _f, indent=2)
+        print(f"[train] saved training features: {features_file.resolve()}")
+    except Exception as _fe:
+        print(f"[train] failed to save training features: {_fe}")
+
     return metadata
 
 if __name__ == "__main__":
