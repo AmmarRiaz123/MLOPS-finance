@@ -5,6 +5,7 @@ import PredictionCard from '../components/PredictionCard';
 import { predictReturnLightGBM, predictReturnRandomForest } from '../lib/return';
 import { predictDirection } from '../lib/direction';
 import { predictVolatility } from '../lib/volatility';
+import Link from 'next/link';
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(false);
@@ -97,6 +98,13 @@ export default function Dashboard() {
               For forecasting and regime analysis, visit the dedicated pages using the navigation above.
               These require different input formats (time periods for forecasting, returns/volatility windows for regime detection).
             </p>
+
+            {/* NEW: link to the orchestrated market analysis page */}
+            <div style={{ marginTop: '1rem' }}>
+              <Link href="/market" className="btn btn-primary">
+                Market Analysis (plots + all models)
+              </Link>
+            </div>
           </div>
         </div>
       </div>
