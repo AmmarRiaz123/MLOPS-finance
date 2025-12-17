@@ -71,7 +71,6 @@ from app.routers import (
     prophet,
     regime,
     return_router,
-    market,
 )
 
 # register routers
@@ -81,7 +80,6 @@ app.include_router(direction, prefix="/predict", tags=["direction"])
 app.include_router(volatility, prefix="/predict", tags=["volatility"])
 app.include_router(prophet, prefix="/forecast", tags=["prophet"])
 app.include_router(regime, prefix="/predict", tags=["regime"])
-app.include_router(market, prefix="/market", tags=["market"])
 
 # remove accidental /predict root routes
 _app_routes = []

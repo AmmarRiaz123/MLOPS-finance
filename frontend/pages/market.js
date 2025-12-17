@@ -40,12 +40,6 @@ export default function MarketAnalyzePage() {
     return n.toFixed(digits);
   };
 
-  const formatVolPctPerDay = (x) => {
-    const n = Number(x);
-    if (!Number.isFinite(n)) return '-';
-    return `${(n * 100).toFixed(2)}%/day`;
-  };
-
   const directionLabel = (d) => {
     // your API currently returns "0"/"1" sometimes; make it user-friendly
     const s = String(d ?? '').toLowerCase();
@@ -176,8 +170,8 @@ export default function MarketAnalyzePage() {
               />
               <MetricCard
                 title="Volatility"
-                value={formatVolPctPerDay(vol)}
-                subtitle={`σ(log returns), dimensionless (raw=${formatNum(vol, 6)})`}
+                value={formatNum(vol, 6)}
+                subtitle="model output (unit depends on training target)"
                 tone="neutral"
               />
 
@@ -243,9 +237,6 @@ export default function MarketAnalyzePage() {
               <PlotCard title="Returns" b64={plots.returns} />
               <PlotCard title="Volatility" b64={plots.volatility} />
               <PlotCard title="Market Regime" b64={plots.regime} />
-              <div className="grid-col-span-2">
-                <PlotCard title="Forecast" b64={plots.forecast} />
-              </div>
             </div>
           </>
         )}

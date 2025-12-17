@@ -107,6 +107,25 @@ def build_features_for_inference(history=None, ohlcv=None, z_window: int = 30) -
     from pathlib import Path as _Path
     import json as _json
 
+    # If no input provided, return canonical regressors filled with zeros (frontend may call with only periods)
+    metrics_file = _Path(__file__).resolve().parent / "metrics" / "latest" / "training_features.json"
+    canonical = None
+    if metrics_file.exists():
+        try:
+            with open(metrics_file, "r") as f:
+                data = _json.load(f)
+            canonical = data.get("features") or data.get("feature_names")
+            if not isinstance(canonical, list):
+                canonical = None
+        except Exception:
+            canonical = None
+    if canonical is None:
+        canonical = ["volume", "high_low_spread", "open_close_spread"]
+
+    if history is None and ohlcv is None:
+        # return zeros for each canonical regressor so frontend can request forecasts without history
+        return {k: 0.0 for k in canonical}
+
     # prepare DataFrame from inputs
     if history:
         # convert Pydantic models to dicts if needed
@@ -121,8 +140,6 @@ def build_features_for_inference(history=None, ohlcv=None, z_window: int = 30) -
         else:
             row = ohlcv
         df = _pd.DataFrame([row]).copy()
-    else:
-        raise RuntimeError("Either 'history' (list of rows) or 'ohlcv' (single row) must be provided for inference.")
 
     # normalize incoming column names -> expected names
     col_map = {
@@ -176,21 +193,6 @@ def build_features_for_inference(history=None, ohlcv=None, z_window: int = 30) -
         roll_std = df[r].rolling(window=z_window, min_periods=1).std().replace(0, _np.nan)
         z = (df[r] - roll_mean) / roll_std
         df[r] = z.fillna(0)
-
-    # load canonical regressors order if available
-    metrics_file = _Path(__file__).resolve().parent / "metrics" / "latest" / "training_features.json"
-    canonical = None
-    if metrics_file.exists():
-        try:
-            with open(metrics_file, "r") as f:
-                data = _json.load(f)
-            canonical = data.get("features") or data.get("feature_names")
-            if not isinstance(canonical, list):
-                canonical = None
-        except Exception:
-            canonical = None
-    if canonical is None:
-        canonical = ["volume","high_low_spread","open_close_spread"]
 
     # take last row and produce regressor dict aligned to canonical order
     last = df.iloc[-1]

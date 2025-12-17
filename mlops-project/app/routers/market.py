@@ -22,7 +22,7 @@ from app.services import prophet_service
 router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / "data"
+DATA_DIRS = [REPO_ROOT / "data", REPO_ROOT / "data" / "raw"]
 
 class MarketAnalyzeRequest(BaseModel):
     analysis_window: int = Field(30, ge=5, le=365)
@@ -34,10 +34,18 @@ def _find_date_col(df: pd.DataFrame) -> str:
             return c
     raise RuntimeError(f"No date column found. Available columns: {list(df.columns)}")
 
-def _load_all_csvs(data_dir: Path) -> pd.DataFrame:
-    files = sorted([p for p in data_dir.glob("*.csv")])
+def _load_all_csvs(data_dirs: List[Path]) -> pd.DataFrame:
+    files: List[Path] = []
+    for d in data_dirs:
+        if d.exists():
+            files.extend(sorted(d.glob("*.csv")))
     if not files:
-        raise RuntimeError(f"No CSV files found in {data_dir}")
+        searched = [str(d) for d in data_dirs]
+        raise RuntimeError(
+            f"No CSV files found in any of: {searched}. "
+            f"Inside Docker, ensure data/*.csv is included in the image (check .dockerignore) "
+            f"or mount your data folder to /app/data."
+        )
 
     dfs = []
     for p in files:
@@ -82,10 +90,24 @@ def _regime_to_numeric(label: str, regime_id: Optional[int] = None) -> float:
         return 0.0
     return float(regime_id) if regime_id is not None else 0.0
 
+def _direction_to_up01(direction: Any) -> int:
+    """
+    Normalize direction outputs from the model into 0/1:
+      - "1"/1/"up"/"bull" => 1
+      - "0"/0/"down"/"bear" => 0
+    """
+    s = str(direction).strip().lower()
+    if s in ("1", "up", "bull", "true", "yes"):
+        return 1
+    if s in ("0", "down", "bear", "false", "no"):
+        return 0
+    # unknown label => treat as 0 (conservative)
+    return 0
+
 @router.post("/analyze", summary="Aggregate market analysis (models + plots)")
 def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
     try:
-        raw = _load_all_csvs(DATA_DIR)
+        raw = _load_all_csvs(DATA_DIRS)
         raw = _normalize_ohlcv_cols(raw)
 
         date_col = _find_date_col(raw)
@@ -110,17 +132,7 @@ def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
         if window_df.empty:
             raise RuntimeError("No valid OHLCV rows after numeric coercion")
 
-        # latest OHLCV payload for point predictions
-        last = window_df.iloc[-1]
-        ohlcv_payload = {
-            "open": float(last["Open"]),
-            "high": float(last["High"]),
-            "low": float(last["Low"]),
-            "close": float(last["Close"]),
-            "volume": float(last["Volume"]),
-        }
-
-        # build history payload for Prophet (and for any models that accept history)
+        # build history payload for Prophet + data_info
         history: List[Dict[str, Any]] = []
         for _, r in window_df.iterrows():
             history.append({
@@ -132,19 +144,63 @@ def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
                 "volume": float(r["Volume"]),
             })
 
-        # --- model calls (reuse existing services; no retraining; no new feature pipelines) ---
-        ret_lgb = predict_with_model_from_ohlcv(dict(ohlcv_payload), model_key="lightgbm_return_model")
-        ret_rf = predict_with_model_from_ohlcv(dict(ohlcv_payload), model_key="random_forest_return_model")
+        # sanity check: ensure we truly have a history window (post-cleaning)
+        if len(history) < 2:
+            raise RuntimeError(
+                f"History window collapsed to {len(history)} row(s) after cleaning. "
+                f"Check your CSV contents for missing/invalid OHLCV values in the last {req.analysis_window} rows."
+            )
 
-        direction_res = predict_direction_from_ohlcv(dict(ohlcv_payload), model_key="lightgbm_up_down_model")
-        vol_val = predict_volatility_from_ohlcv(dict(ohlcv_payload), model_key="lightgbm_volatility_model")
+        # --- model calls (SCRAPPED previous history-passing logic)
+        # Run each point model on EACH row (single-row OHLCV), then aggregate across the window.
+        lgb_returns: List[float] = []
+        rf_returns: List[float] = []
+        vols: List[float] = []
+        dir_up01: List[int] = []
+        dir_probs: List[float] = []
+
+        for row in history:
+            payload = {
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+            }
+
+            # return models (single-row inference)
+            lgb_returns.append(float(predict_with_model_from_ohlcv(payload, model_key="lightgbm_return_model")))
+            rf_returns.append(float(predict_with_model_from_ohlcv(payload, model_key="random_forest_return_model")))
+
+            # direction model (single-row inference)
+            d = predict_direction_from_ohlcv(payload, model_key="lightgbm_up_down_model")
+            up01 = _direction_to_up01(d.get("direction"))
+            dir_up01.append(up01)
+            p = d.get("probability")
+            if p is not None:
+                try:
+                    dir_probs.append(float(p))
+                except Exception:
+                    pass
+
+            # volatility model (single-row inference)
+            vols.append(float(predict_volatility_from_ohlcv(payload, model_key="lightgbm_volatility_model")))
+
+        # aggregate
+        ret_lgb = float(np.mean(lgb_returns)) if lgb_returns else 0.0
+        ret_rf = float(np.mean(rf_returns)) if rf_returns else 0.0
+        vol_val = float(np.mean(vols)) if vols else 0.0
+
+        up_rate = float(np.mean(dir_up01)) if dir_up01 else 0.0
+        direction_label = "up" if up_rate >= 0.5 else "down"
+        direction_prob = float(np.mean(dir_probs)) if dir_probs else None
+        direction_res = {"direction": direction_label, "probability": direction_prob, "up_rate": round(up_rate, 4)}
 
         # regime: build returns/vol windows from aggregated close series
         closes = window_df["Close"].astype(float).values
         returns = pd.Series(closes).pct_change().fillna(0.0).values
         rolling_vol = pd.Series(returns).rolling(window=min(10, len(returns)), min_periods=1).std().fillna(0.0).values
 
-        # "current" regime using entire available window vectors
         regime_res = predict_regime_from_windows(
             returns_window=[float(x) for x in returns.tolist()],
             volatility_window=[float(x) for x in rolling_vol.tolist()],
@@ -158,9 +214,10 @@ def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
             "return": {
                 "lightgbm_return_model": float(ret_lgb),
                 "random_forest_return_model": float(ret_rf),
+                "aggregation": "mean_over_window",
             },
             "direction": direction_res,
-            "volatility": {"value": float(vol_val)},
+            "volatility": {"value": float(vol_val), "aggregation": "mean_over_window"},
             "regime": regime_res,
             "forecast": {"periods": int(req.forecast_period), "points": forecast_rows},
         }
@@ -239,6 +296,11 @@ def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
         return {
             "analysis_window": int(req.analysis_window),
             "forecast_period": int(req.forecast_period),
+            "data_info": {
+                "history_rows": len(history),
+                "history_start": history[0]["date"] if history else None,
+                "history_end": history[-1]["date"] if history else None,
+            },
             "metrics": metrics,
             "plots": {
                 "price_trend": price_trend_b64,

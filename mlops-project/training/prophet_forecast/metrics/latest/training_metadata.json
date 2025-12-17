@@ -1,5 +1,5 @@
 {
-  "trained_at": "2025-12-16T22:08:00.052113",
+  "trained_at": "2025-12-17T18:16:38.212778",
   "data_start": "1962-01-02T00:00:00",
   "data_end": "2025-12-16T00:00:00",
   "train_end": "2013-02-28T00:00:00",
@@ -10,6 +10,8 @@
     "high_low_spread",
     "open_close_spread"
   ],
+  "target": "Close",
+  "target_transform": "log",
   "params": {
     "selected_changepoint_prior_scale": 0.2,
     "candidate_changepoint_prior_scales": [
@@ -24,11 +26,11 @@
       "fourier_order": 5
     }
   },
-  "validation_rmse": 32.08183546017469,
+  "validation_rmse": 392.19133638022237,
   "regressor_coefs": {
-    "intercept": 1.1071672593938,
-    "volume": -0.8748642431007805,
-    "high_low_spread": -0.017756956437198046,
-    "open_close_spread": 0.04723409176772958
+    "intercept": 2.303652194552101,
+    "volume": -0.0050210732045783265,
+    "high_low_spread": -0.00041429917313463935,
+    "open_close_spread": -0.002623155960622273
   }
 }
