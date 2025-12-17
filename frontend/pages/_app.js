@@ -7,6 +7,7 @@ function Navigation() {
   
   const navItems = [
     { href: '/', label: 'Dashboard' },
+    { href: '/market', label: 'Market' },
     { href: '/return', label: 'Return' },
     { href: '/direction', label: 'Direction' },
     { href: '/volatility', label: 'Volatility' },
