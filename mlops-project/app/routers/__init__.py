@@ -13,6 +13,5 @@ prophet = _load_router("prophet")
 regime = _load_router("regime")
 # 'return' is a Python keyword — expose as return_router
 return_router = _load_router("return")
-market = _load_router("market")
 
-__all__ = ["health", "direction", "volatility", "prophet", "regime", "return_router", "market"]
+__all__ = ["health", "direction", "volatility", "prophet", "regime", "return_router"]

@@ -94,12 +94,6 @@ Output (200):
   "volatility": 0.01234   // model-specific volatility metric (e.g. std-dev or proxy)
 }
 
-Notes on units:
-- The volatility model is trained to predict **log-return volatility** (dimensionless):
-  the **standard deviation of log returns** over the configured horizon (training uses `target_horizon=3`).
-- This is **not a price unit** and is **not annualized**.
-- No post-scaling is required (training scales X, not y). For display, you can show `volatility * 100` as an approximate percentage volatility.
-
 Example:
 {
   "model": "lightgbm_volatility_model",

@@ -5,7 +5,6 @@ from typing import List, Dict, Any, Optional
 import joblib
 import pandas as pd
 import numpy as np
-import os
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,30 +45,6 @@ def _load_model_artifact():
         if "model" in obj:
             return obj["model"]
     return obj
-
-def _prophet_target_transform() -> str:
-    """
-    Returns: "log" or "none".
-    Training currently uses log(y), so default to "log" if metadata is missing.
-    """
-    # explicit override if you ever need it
-    env = (os.getenv("PROPHET_TARGET_TRANSFORM") or "").strip().lower()
-    if env in ("log", "none"):
-        return env
-
-    meta = REPO_ROOT / "training" / "prophet_forecast" / "metrics" / "latest" / "training_metadata.json"
-    if meta.exists():
-        try:
-            with open(meta, "r") as f:
-                md = json.load(f)
-            t = (md.get("target_transform") or md.get("target_space") or "").strip().lower()
-            if t in ("log", "none"):
-                return t
-        except Exception:
-            pass
-
-    # current repo training uses log(y); keep inference consistent
-    return "log"
 
 def forecast_prophet(periods: int, history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """
@@ -135,13 +110,6 @@ def forecast_prophet(periods: int, history: Optional[List[Dict[str, Any]]] = Non
         forecast_df = model.predict(future_df)
     except Exception as e:
         raise RuntimeError(f"Prophet model prediction failed: {e}")
-
-    # 4b) inverse-transform to raw price if training used log(y)
-    # (training/prophet_forecast/train.py does df['y']=log(df['y']))
-    if _prophet_target_transform() == "log":
-        for c in ("yhat", "yhat_lower", "yhat_upper"):
-            if c in forecast_df.columns:
-                forecast_df[c] = np.exp(pd.to_numeric(forecast_df[c], errors="coerce")).astype(float)
 
     # 5) serialize results
     out_cols = ["ds", "yhat"]
