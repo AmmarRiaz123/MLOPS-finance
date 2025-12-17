@@ -6,9 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # read from your shell/.env when running docker compose (avoid committing secrets)
       DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
     volumes:
-      # ensures the container uses the entire current mlops-project folder at runtime
       - .:/app
     restart: unless-stopped

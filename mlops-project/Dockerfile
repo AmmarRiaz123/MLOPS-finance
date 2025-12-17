@@ -16,11 +16,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
  && if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; \
-    else pip install --no-cache-dir fastapi uvicorn joblib numpy pandas scikit-learn lightgbm prophet requests; fi
+    else pip install --no-cache-dir fastapi uvicorn joblib numpy pandas scikit-learn lightgbm prophet requests prefect; fi
 
-# Copy backend code (includes app/, models/, training/ metrics needed for feature lists)
+# Copy the ENTIRE mlops-project folder (app/, training/, prefect/, models/, data/, docs, etc.)
 COPY . .
+
+# Build-time sanity check: fail the build if the full project layout isn't present
+RUN test -d /app/app \
+ && test -d /app/training \
+ && test -d /app/prefect \
+ && test -d /app/models \
+ && echo "OK: full mlops-project present in image"
 
 EXPOSE 8000
 
+# Default to serving the API; you can still run training/prefect by overriding the command.
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
