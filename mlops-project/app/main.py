@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi.middleware.cors import CORSMiddleware  # <- added
 from starlette.responses import Response
 
 # ensure the repository package root (mlops-project) is on sys.path
@@ -25,37 +24,44 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MLOps Finance Inference API", lifespan=lifespan)
 
-# --- CORS configuration ---
+# --- Minimal CORS (only allow your Railway frontend) ---
 ALLOWED_ORIGIN = "https://ml-project-production-2e4f.up.railway.app"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[ALLOWED_ORIGIN],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Explicit preflight handler (only allow your Railway frontend)
-@app.options("/{path:path}")
-async def _options_preflight(path: str, request: Request):
+@app.middleware("http")
+async def _simple_cors(request: Request, call_next):
     origin = request.headers.get("origin")
-    if origin != ALLOWED_ORIGIN:
-        return Response(status_code=400)
 
-    req_method = request.headers.get("access-control-request-method", "POST")
-    req_headers = request.headers.get("access-control-request-headers", "")
-
-    return Response(
-        status_code=204,
-        headers={
-            "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-            "Vary": "Origin",
-            "Access-Control-Allow-Methods": req_method,
-            "Access-Control-Allow-Headers": req_headers if req_headers else "*",
-            "Access-Control-Max-Age": "86400",
-        },
+    is_preflight = (
+        request.method == "OPTIONS"
+        and origin is not None
+        and request.headers.get("access-control-request-method") is not None
     )
+
+    # --- Handle preflight requests ---
+    if is_preflight:
+        # only allow your Railway frontend
+        if origin != ALLOWED_ORIGIN:
+            return Response(status_code=400)
+
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
+                "Access-Control-Max-Age": "86400",
+                "Vary": "Origin",
+            },
+        )
+
+    # --- Handle actual requests ---
+    response = await call_next(request)
+
+    if origin == ALLOWED_ORIGIN:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+
+    return response
 
 # import routers
 from app.routers import (
