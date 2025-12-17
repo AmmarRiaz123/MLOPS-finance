@@ -1,21 +1,4 @@
-"""
-Test runner for app routes.
 
-Usage examples (from mlops-project folder):
-  - Run all tests:
-      python -m app.tests.run_tests --all
-
-  - Run a specific test file:
-      python -m app.tests.run_tests --file test_direction.py
-
-  - Run a specific test (pytest command shown and executed):
-      python -m app.tests.run_tests --pytest "app/tests/test_direction.py::test_predict_direction_route_exists"
-
-This script will also print equivalent pytest commands you can run manually:
-  pytest app/tests/test_root_health.py -q
-  pytest app/tests/test_direction.py -q
-  pytest app/tests/test_all_routes.py -q
-"""
 import argparse
 import subprocess
 import sys

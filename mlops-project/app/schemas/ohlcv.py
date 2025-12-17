@@ -43,15 +43,3 @@ class ProphetRequest(BaseModel):
         None,
         description="Optional recent history (oldest->newest). If omitted, model regressors will use safe default values."
     )
-
-    # (line ~55) split long line to satisfy flake8 E501
-    # Example pattern:
-    # raise ValueError(
-    #     "your long message part 1 "
-    #     "part 2"
-    # )
-    raise RuntimeError(
-        f"Feature builder requires column 'Close' (case-sensitive). Available columns: {list(df.columns)}. "
-        "Provide OHLCV fields as keys 'open','high','low','close','volume' "
-        "or column names matching training CSV."
-    )
