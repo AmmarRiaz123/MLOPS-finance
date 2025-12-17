@@ -1,15 +1,14 @@
 import joblib
-from pathlib import Path
-from typing import Dict, Any
 from app.core.config import MODELS_DIR
 
-MODEL_REGISTRY: Dict[str, Any] = {}
+# ensure this is assigned at module scope (services import it)
+MODEL_REGISTRY = {}
 
-def load_models() -> None:
+def load_models():
     """Load all models into MODEL_REGISTRY at startup."""
     global MODEL_REGISTRY
+    MODEL_REGISTRY = {}  # assignment makes `global MODEL_REGISTRY` meaningful (flake8 F824)
     
-    MODEL_REGISTRY.clear()
     if not MODELS_DIR.exists():
         return
     for p in MODELS_DIR.glob("*.pkl"):
