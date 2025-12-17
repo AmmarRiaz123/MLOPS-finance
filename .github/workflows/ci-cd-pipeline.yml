@@ -83,12 +83,13 @@ jobs:
 
   notify_slack_optional:
     runs-on: ubuntu-latest
-    needs: [lint_test, docker_build_push]
-    if: ${{ always() && env.SLACK_WEBHOOK_URL != '' }}
+    needs: [lint_test]
+    if: ${{ always() }}
     steps:
       - name: Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
         run: |
-          msg="CI/CD for ${{ github.repository }} @ ${{ github.sha }} — lint_test=${{ needs.lint_test.result }}, docker=${{ needs.docker_build_push.result }}"
+          msg="CI/CD for ${{ github.repository }} @ ${{ github.sha }} — lint_test=${{ needs.lint_test.result }}"
           curl -fsS -X POST -H 'Content-type: application/json' \
             --data "{\"text\": \"${msg}\"}" \
-            "${{ env.SLACK_WEBHOOK_URL }}" || true
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
