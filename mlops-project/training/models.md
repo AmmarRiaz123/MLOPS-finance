@@ -97,6 +97,10 @@ Important: inference must reproduce these feature vectors exactly (names + order
   - stoch_d
   - vol_x_std5
   - vol_x_mom8
+- Target / units:
+  - Trained on **volatility of log returns** (dimensionless), computed as a rolling std of log returns over the training horizon (currently `target_horizon=3`).
+  - Output is **not** dollars and **not** annualized; for UI you can display `vol * 100` as approximate percent.
+
 - Files (authoritative):
   - training/lightgbm_volatility/metrics/latest/training_features.json
   - models/latest/feature_names.json

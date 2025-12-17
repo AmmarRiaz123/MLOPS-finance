@@ -179,6 +179,8 @@ def train(test_size_ratio: float = 0.2, random_seed: int = 42) -> Dict[str, Any]
         "n_train": len(train_df),
         "n_test": len(test_df),
         "regressors": regressors,
+        "target": "Close",
+        "target_transform": "log",
         "params": {
             "selected_changepoint_prior_scale": best_cps,
             "candidate_changepoint_prior_scales": cps_list,
