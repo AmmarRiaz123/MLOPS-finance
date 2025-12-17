@@ -84,7 +84,7 @@ jobs:
   notify_slack_optional:
     runs-on: ubuntu-latest
     needs: [lint_test, docker_build_push]
-    if: ${{ always() && secrets.SLACK_WEBHOOK_URL }}
+    if: ${{ always() && env.SLACK_WEBHOOK_URL != '' }}
     steps:
       - name: Slack notification
         run: |
