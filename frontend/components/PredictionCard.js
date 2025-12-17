@@ -19,10 +19,30 @@ const PredictionCard = ({ model, prediction, probability, confidence, error }) =
     );
   }
 
+  const isVolatilityModel = typeof model === 'string' && model.toLowerCase().includes('volatility');
+  const numericPrediction =
+    typeof prediction === 'number'
+      ? prediction
+      : typeof prediction === 'string'
+      ? Number(prediction)
+      : NaN;
+
+  const displayPrediction = (() => {
+    if (isVolatilityModel && Number.isFinite(numericPrediction)) {
+      return `${(numericPrediction * 100).toFixed(2)}%/day`;
+    }
+    return prediction;
+  })();
+
   return (
     <div className="card">
       <div className="model-name">{model}</div>
-      <div className="prediction-value">{prediction}</div>
+      <div className="prediction-value">{displayPrediction}</div>
+      {isVolatilityModel && Number.isFinite(numericPrediction) && (
+        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
+          Unit: σ(log returns) (dimensionless) — shown as approx % per day
+        </div>
+      )}
       {probability && (
         <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
           Probability: {(probability * 100).toFixed(1)}%
