@@ -28,13 +28,15 @@ app = FastAPI(title="MLOps Finance Inference API", lifespan=lifespan)
 origins = [
     "http://localhost:3000",  # Next.js dev server
     "http://127.0.0.1:3000",
-    # add your production frontend URL here when deployed
+    # Railway frontend (add your deployed URL here)
+    "https://ml-project-production-2e4f.up.railway.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_origin_regex=r"^https://.*\.up\.railway\.app$|^https://.*\.ngrok-free\.dev$",
+    allow_credentials=False,
     allow_methods=["*"],  # allow POST, GET, OPTIONS, etc.
     allow_headers=["*"],
 )
