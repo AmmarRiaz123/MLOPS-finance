@@ -5,8 +5,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]  # mlops-project
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from fastapi.testclient import TestClient
-from app.main import app
+from fastapi.testclient import TestClient  # noqa: E402
+from app.main import app  # noqa: E402
 
 client = TestClient(app)
 

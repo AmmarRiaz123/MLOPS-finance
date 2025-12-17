@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]  # mlops-project
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.core.model_loader import load_models
+from app.core.model_loader import load_models  # noqa: E402
 
 # Use lifespan handler for startup/shutdown
 @asynccontextmanager
@@ -63,8 +63,7 @@ async def _simple_cors(request: Request, call_next):
 
     return response
 
-# import routers
-from app.routers import (
+from app.routers import (  # noqa: E402
     health,
     direction,
     volatility,

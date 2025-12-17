@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from typing import Optional
 from app.schemas.ohlcv import ProphetRequest
 from app.schemas.prediction import ProphetResponse
 from app.services import prophet_service

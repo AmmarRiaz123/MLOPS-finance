@@ -4,7 +4,6 @@ import json
 from typing import List, Dict, Any, Optional
 import joblib
 import pandas as pd
-import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
