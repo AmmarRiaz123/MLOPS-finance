@@ -1,4 +1,4 @@
-# Python
+# Python caches
 __pycache__/
 *.pyc
 *.pyo
@@ -15,6 +15,17 @@ venv/
 .idea/
 .DS_Store
 
+# Local runtime data (typically large / frequently changing)
+data/
+
+# Prefect local state (optional)
+.prefect/
+
+# Large archives (keep latest; archives can be huge)
+models/archived/
+training/**/metrics/archived/
+
+# Git (not needed inside image)
 .git/
 .gitignore
 .env

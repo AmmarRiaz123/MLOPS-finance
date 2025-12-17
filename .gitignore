@@ -1,5 +1,61 @@
+# --------------------
+# Python
+# --------------------
 venv/
-.env
+.venv/
 __pycache__/
-*.pyc   
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# --------------------
+# Environment files
+# --------------------
+.env
+.env.*
+!.env.example
+
+# --------------------
+# Node / Next.js
+# --------------------
 node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --------------------
+# OS / Editor junk
+# --------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --------------------
+# ML / Data artifacts
+# --------------------
+data/
+mlops-project/models/
+mlops-project/training/**/metrics/**/plots/
+
+# --------------------
+# Docker
+# --------------------
+*.log
+# --------------------
+# Next.js / Webpack caches
+# --------------------
+.next/
+.next/cache/
+out/
+dist/
+build/
+.cache/
+.turbo/
+
+# Webpack
+webpack.config.js.tmp
