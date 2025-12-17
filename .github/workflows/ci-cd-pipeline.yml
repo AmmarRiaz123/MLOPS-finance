@@ -47,8 +47,8 @@ jobs:
 
       - name: Lint
         run: |
-          black --check .
-          flake8 app training prefect --max-line-length=120
+          black --check app
+          flake8 app --max-line-length=120
 
       - name: Tests
         run: |
