@@ -256,7 +256,14 @@ body {
   color: #111827;
 }
 
+.plot-card {
+  overflow: hidden;
+}
+
 .plot-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
   width: 100%;
   margin-top: 0.75rem;
   border-radius: 0.5rem;
@@ -276,5 +283,7 @@ body {
   line-height: 1.4;
 }
 
-/* optional helper if you used grid-col-span-2 above */
-.grid-col-span-2 { grid-column: span 2 / span 2; }
+/* Ensure full-width cards in a grid don't create weird implicit columns */
+.grid-col-span-2 {
+  grid-column: 1 / -1;
+}
