@@ -8,7 +8,7 @@ from io import BytesIO
 import pandas as pd
 import numpy as np
 
-# headless plotting (lazy import to avoid flake8 E402)
+# headless plotting (lazy import; keep imports at top to satisfy flake8 E402)
 def _get_plt():
     import matplotlib
     matplotlib.use("Agg")
@@ -263,8 +263,8 @@ def analyze_market(req: MarketAnalyzeRequest) -> Dict[str, Any]:
         regime_vals = []
         for i in range(len(returns)):
             w = min(10, i + 1)
-            r_win = [float(x) for x in returns[max(0, i - w + 1):i + 1].tolist()]
-            v_win = [float(x) for x in rolling_vol[max(0, i - w + 1):i + 1].tolist()]
+            r_win = [float(x) for x in returns[max(0, i - w + 1):i+1].tolist()]
+            v_win = [float(x) for x in rolling_vol[max(0, i - w + 1):i+1].tolist()]
             try:
                 rr = predict_regime_from_windows(r_win, v_win, model_key="market_regime_hmm")
                 regime_vals.append(_regime_to_numeric(rr.get("regime_label"), rr.get("regime_id")))
