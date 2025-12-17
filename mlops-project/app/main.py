@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware  # <- added
+from starlette.responses import Response
 
 # ensure the repository package root (mlops-project) is on sys.path
 REPO_ROOT = Path(__file__).resolve().parents[1]  # mlops-project
@@ -25,13 +26,36 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MLOps Finance Inference API", lifespan=lifespan)
 
 # --- CORS configuration ---
+ALLOWED_ORIGIN = "https://ml-project-production-2e4f.up.railway.app"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],         
-    allow_credentials=False,      
-    allow_methods=["*"],          
+    allow_origins=[ALLOWED_ORIGIN],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Explicit preflight handler (only allow your Railway frontend)
+@app.options("/{path:path}")
+async def _options_preflight(path: str, request: Request):
+    origin = request.headers.get("origin")
+    if origin != ALLOWED_ORIGIN:
+        return Response(status_code=400)
+
+    req_method = request.headers.get("access-control-request-method", "POST")
+    req_headers = request.headers.get("access-control-request-headers", "")
+
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+            "Vary": "Origin",
+            "Access-Control-Allow-Methods": req_method,
+            "Access-Control-Allow-Headers": req_headers if req_headers else "*",
+            "Access-Control-Max-Age": "86400",
+        },
+    )
 
 # import routers
 from app.routers import (
