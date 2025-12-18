@@ -7,18 +7,6 @@ import shutil
 from datetime import datetime
 from typing import Dict, Any
 
-# external libs
-from joblib import dump
-try:
-    from prophet import Prophet
-except Exception as e:
-    raise RuntimeError(
-        "Prophet is not installed. Install it (and cmdstanpy) with:\n"
-        "  pip install prophet cmdstanpy\n"
-        "or install all project deps:\n"
-        "  pip install -r mlops-project/requirements.txt\n"
-        "See https://facebook.github.io/prophet/docs/installation.html for platform-specific notes."
-    ) from e
 
 from features import prepare_prophet_df
 
