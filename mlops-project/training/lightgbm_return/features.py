@@ -37,13 +37,7 @@ def _load_all(files: List[Path]) -> pd.DataFrame:
     return full
 
 def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
-    """
-    Streamlined, memory-only feature builder:
-    - robust CSV parsing (skips malformed rows)
-    - creates multi-day targets via `horizons` (e.g. [3] or [5])
-    - adds rolling returns (3/5/10), rolling stats on returns, compact engineered features (8-12)
-    - drops constant/all-NaN columns, optional StandardScaler returned when scale=True
-    """
+
     files = _find_csv_files()
     raw = _load_all(files)
 
@@ -84,7 +78,7 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
         df[f'ret_skew_{w}'] = df['daily_return'].rolling(w, min_periods=1).skew().fillna(0)
         df[f'ret_kurt_{w}'] = df['daily_return'].rolling(w, min_periods=1).kurt().fillna(0)
 
-    # provide a short-name std5 for backwards compatibility (used elsewhere)
+    # provide a short-name std5 for backwards compatibility 
     if 'std5' not in df.columns:
         df['std5'] = df['daily_return'].rolling(5, min_periods=1).std().fillna(0)
     # also ensure ret_std_5 exists (redundant-safe)
@@ -97,8 +91,7 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
 
     df['ma5'] = df['Close'].rolling(5).mean()
     df['ma10'] = df['Close'].rolling(10).mean()
-    # df['std5'] = df['daily_return'].rolling(5).std()  # std5 already ensured above
-
+ 
     # EWMA momentum
     df['ewma_8'] = df['Close'].ewm(span=8, adjust=False).mean()
     # ensure momentum_8 always exists (safe division, fillna)
@@ -193,11 +186,7 @@ def prepare_features(scale: bool = True, horizons: list | None = None) -> Tuple[
     return X, y, dates
 
 def build_features_for_inference(history=None, ohlcv=None):
-    """
-    history: optional list[dict] with recent rows (same columns as training CSV) ordered oldest->newest
-    ohlcv: optional single OHLCV dict to use as the most recent row
-    Returns: dict {feature_name: float} aligned to candidate_features / training_features.json
-    """
+
     import pandas as _pd
     import numpy as _np
 

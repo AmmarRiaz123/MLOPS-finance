@@ -121,10 +121,7 @@ def generate_features(df):
     return features_df
 
 def create_target(df, horizon: int = 1, smooth_window: int | None = None):
-    """Create up_down target: 1 if future close (horizon days) > today close.
-    If smooth_window is provided, a past-only rolling mean (no future leakage) is computed
-    and used as the base series to compare future value against.
-    """
+
     series = df['Close']
     if smooth_window and smooth_window > 1:
         # rolling uses past values only so no leakage
@@ -143,15 +140,7 @@ def create_target(df, horizon: int = 1, smooth_window: int | None = None):
     return df
 
 def prepare_ml_data(csv_path, horizon: int = 1, smooth_window: int | None = None, scale: bool = False):
-    """Complete pipeline: load -> features -> target.
-    Parameters:
-    - horizon: days ahead to predict (1 = next day)
-    - smooth_window: optional past-only smoothing window used to create an additional smoothed target
-    - scale: if True, returns (X_scaled, y, scaler)
-    Returns:
-    - X, y  (if scale=False)
-    - (X_scaled, y, scaler) (if scale=True)
-    """
+
     # Load and clean data
     df = load_and_clean_data(csv_path)
     print(f"Loaded {len(df)} rows from {csv_path}")
@@ -189,12 +178,7 @@ def prepare_ml_data(csv_path, horizon: int = 1, smooth_window: int | None = None
     return X_clean, y_clean
 
 def build_features_for_inference(history=None, ohlcv=None):
-    """
-    Build features for a single inference row using the same training feature code.
-    - history: optional list[dict] ordered oldest->newest
-    - ohlcv: optional single dict with keys like open/high/low/close/volume (case-insensitive)
-    Returns: dict {feature_name: float} for the most recent row produced by generate_features.
-    """
+
     import pandas as _pd
     import numpy as _np
     from pathlib import Path as _Path
