@@ -40,34 +40,10 @@ jobs:
       - name: Tests
         run: pytest -q
 
-  build-and-push:
-    # FIXED: Changed 'Tests' to 'lint_test' to match the job name above
-    needs: lint_test
-    runs-on: ubuntu-latest
-    # Only push to registry on main branch updates
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          # Using dynamic tagging based on your repo name
-          tags: ghcr.io/${{ github.repository }}:latest
 
   notify_slack_optional:
     runs-on: ubuntu-latest
-    needs: [lint_test, build-and-push]
+    needs: lint_test
     if: always()
     steps:
       - name: Slack notification
